@@ -1,158 +1,216 @@
-# VariOne — Context for Claude Code
+# VariOne — Agent Briefing
 
-## Project
+You are working on **VariOne**, a closed-source ESP32-based wireless security
+awareness device. This file is the standing brief for every session.
 
-Graduation project at Canadian International College (CIC) Cairo, supervised by Dr. Ahmed Gaber (cybersecurity). A multi-tool pentesting device for teaching engineering students about wireless vulnerabilities in a controlled lab environment. Current firmware: v0.4 (stable, working).
+## First thing, every session
 
-Repo: github.com/amir-azzam/variOne
-Tags: v0.1 (original), v0.2 (beacon spam + buttons), v0.3 (evil twin), v0.4 (mascot system)
+Read `PRD.md` before doing anything else. It is the source of truth.
+If anything you are about to do conflicts with the PRD, the PRD wins —
+flag the conflict and ask before deviating.
 
-## Dev environment
+Quick references inside the PRD:
 
-- PlatformIO + VS Code on Fedora 43 (some sessions on Windows too — paths like C:/Users/Dena/ appear)
-- Board: esp32dev, framework=Arduino
-- Port: /dev/ttyUSB0 on Linux, COM port on Windows
-- Main library: U8g2 for OLED
+- **Pin map:** §7.2 (single source of truth — firmware pin constants mirror it)
+- **Module structure:** §8.2
+- **Feature specs and acceptance criteria:** §9
+- **Safety guards:** §5.4 and §9.5
+- **Project plan and ownership:** §14
+- **SD capture schemas:** §11
 
-## Hardware inventory
+## Build system
 
-- ESP32 DevKit V1 CH340 USB-C
-- SH1106 1.3" OLED 128x64 blue, I2C — SDA=21, SCL=22
-- CC1101 433MHz (E07-M1101D V2.0) — already soldered, antenna attached, has female-to-male jumpers
-- PN532 NFC (not yet wired) — I2C mode SEL0=1 SEL1=0, address 0x24
-- IR receiver VS1838B on GPIO 36 (IR transmitter LED 940nm + 100Ω resistor not yet purchased)
-- 4 tactile buttons — Left=14, Up=26, Right=32, Down=33, all INPUT_PULLUP
-- SD card module (not yet wired) — CS=GPIO 5
-- MB102 breadboard power supply, both rails set to 3.3V
+- PlatformIO on VS Code.
+- `platform = espressif32`, `board = esp32dev`, `framework = arduino`.
+- Build with `pio run`. The operator flashes manually unless they explicitly
+  ask for upload; do not assume an ESP32 is connected. Monitor at 115200.
+- Library list lives in `platformio.ini`. Don't add libraries without
+  saying so in the response.
 
-## Pin map (current and planned)
+## Hardware context (do not re-derive)
 
-```
-GPIO 21     OLED SDA (I2C)
-GPIO 22     OLED SCL (I2C)
-GPIO 14     Button LEFT   (INPUT_PULLUP)
-GPIO 26     Button UP     (INPUT_PULLUP)
-GPIO 32     Button RIGHT  (INPUT_PULLUP)
-GPIO 33     Button DOWN   (INPUT_PULLUP)
-GPIO 18     SPI SCK   (shared bus: CC1101 + future SD)
-GPIO 19     SPI MISO  (shared)
-GPIO 23     SPI MOSI  (shared)
-GPIO 27     CC1101 CSN (safe-boot HIGH required before SPI init)
-GPIO 4      CC1101 GDO0 (newly added for this build)
-GPIO 5      SD card CS (future — move SD to HSPI to avoid conflict, see notes)
-GPIO 36     IR receiver
-GPIO 25     IR transmitter (future)
-```
+- ESP32-WROOM-32D N4 DevKit V1, dual-core CPU, single 2.4 GHz Wi-Fi
+  radio, USB-C powered, 3.3 V rail from onboard LDO.
+- SH1106 128×64 OLED on I²C (SDA=21, SCL=22).
+- **PN532 NFC on the same I²C bus (SDA=21, SCL=22), address 0x24** —
+  working configuration in current firmware. PN532 IRQ is physically
+  wired to **GPIO 13** (firmware currently polls and does not subscribe
+  to it — `Adafruit_PN532(255, 255)` — but the wire is there for future
+  interrupt-driven detection). Code also defines `PIN_NFC_RST = 13` /
+  `PIN_NFC_SS = 27` from a prior SPI plan; these are unused in I²C mode
+  but kept as no-ops. Do **not** switch PN532 to SPI mode without
+  explicit instruction.
+- CC1101 + microSD share VSPI (SCK=18, MISO=19, MOSI=23) with separate
+  CS lines. Every transaction must hold the SPI bus mutex defined in
+  `src/core/SpiBus.*`. Current working wiring uses CC1101 CSN=GPIO 15,
+  CC1101 GDO0=GPIO 4, and SD CS=GPIO 5.
+- CC1101 is **3.3 V only** on VCC. Never suggest 5 V on the CC1101.
+- 4 buttons, all `INPUT_PULLUP`. Working pinout: LEFT=14, UP=26,
+  RIGHT=32, DOWN=33. Treat menu navigation as 4-way (UP/DOWN scroll,
+  RIGHT=select/enter, LEFT=back/exit) until PRD §7.2 reconciliation
+  decides otherwise.
+- IR RX on GPIO 36 (VS1838B, currently wired). IR TX on GPIO 25 (planned;
+  38 kHz LEDC carrier, NPN driver).
+- Sub-GHz front end: optional **external LNA + 433.92 MHz SAW filter**
+  in front of CC1101 to reject sensor/mains/ISM noise so the radio
+  focuses on car-key fobs and garage gates. Spare CC1101 module is on
+  hand; second module reserved for future TX/RX split if needed.
+- **Power**: USB-C from bench/wall during development. Final demo target
+  is **standalone battery operation, USB-C rechargeable** — single
+  protected 18650 (~3000 mAh, preferred) **or** slim LiPo pouch
+  (1500–2000 mAh, fallback) + **USB-C TP4056-with-protection** charger
+  + MT3608 boost to 5 V → ESP32 VIN. See PRD §6.4 for full architecture
+  and rules. CC1101 stays 3.3 V only; 5 V boost feeds ESP32 VIN, onboard
+  LDO produces the 3.3 V rail for every peripheral. Add hard-off slide
+  switch, 100 k/100 k ADC divider on GPIO 35 for low-battery cutoff,
+  and a 1000 µF + 100 nF bulk cap across the boost output to suppress
+  TX-burst sag.
 
-CC1101 module pin-to-GPIO wiring (E07-M1101D V2.0, verified against Ebyte datasheet):
+## Coding conventions
 
-```
-Module pin 1 (GND)  -> ESP32 GND
-Module pin 2 (VCC)  -> ESP32 3.3V   (never 5V — destroys chip)
-Module pin 3 (GDO0) -> ESP32 GPIO 4
-Module pin 4 (CSN)  -> ESP32 GPIO 27
-Module pin 5 (SCK)  -> ESP32 GPIO 18
-Module pin 6 (MOSI) -> ESP32 GPIO 23
-Module pin 7 (MISO) -> ESP32 GPIO 19
-Module pin 8 (GDO2) -> leave unconnected
-```
+- One C++ class per peripheral, in its own `.h/.cpp` pair under the
+  directory tree in PRD §8.2 / Appendix A.
+- Every file starts with a one-paragraph header comment stating its
+  responsibility and which PRD section it implements.
+- No global state outside `src/config.h`. Pass dependencies in
+  constructors.
+- Long-running operations are non-blocking and yield to the input handler
+  so BACK can always cancel.
+- Capture files on SD use the schemas in PRD §11. Don't invent new
+  schemas without updating the PRD.
+- Comments in English. Variable names in English.
 
-## Current firmware features (all stable in v0.4)
+## How to take a task
 
-**Core features (the project's actual pitch):**
+When asked to implement a feature:
 
-- WiFi Scanner (async, mascot waves during scan, cancelable with back button)
-- Packet Monitor (promiscuous mode, 14-channel hop 200ms, animated bar graph)
-- Probe Sniffer (0x40 frames, deduped, 500ms hop)
-- Deauth Detector (passive 0xC0/0xA0 sniff, 300ms hop)
-- Beacon Spam (20 fake SSIDs, unique MACs per SSID, channels 1/6/11)
-- Evil Twin AP (clones target SSID, open network, DNS hijack, CIC PowerCampus portal clone with dark red #7B1818, credentials captured to serial + SD)
-- Mascot system (10 moods, boot animation, 30s idle sleep, mood reactions on key events)
-- SD card logging (graceful fallback if no card, 'r' command in serial dumps all creds)
+1. State which PRD section governs it.
+2. Restate the acceptance criteria from §9 verbatim.
+3. List the files you will create or change.
+4. Implement.
+5. Note which acceptance criteria are now testable on hardware and which
+   still depend on later modules.
 
-**Non-core / test-only:**
+If the request is vague, ask which PRD acceptance criterion it maps to
+before writing code.
 
-- Deauth Attack — code compiles and transmits, but blocked by PMF/802.11w on modern devices. Needs a WPA2-only router with PMF disabled (2.4GHz, not a phone hotspot) to validate. Not a main selling point; included for completeness of the wireless-vulnerability demonstrations and only demonstrated on lab hardware.
+## Sensor-first test discipline (mandatory for any peripheral not yet
+working in `main.cpp`)
 
-## Ethics framing (important for supervisor review)
+Before integrating any new sensor, RF front end, or bus device into the
+main firmware, you **must** ship a standalone serial-only test sketch
+under `test/test_<sensor>.cpp` (or a dedicated PlatformIO env in
+`platformio.ini`) that:
 
-This is a legitimate academic project for demonstrating wireless vulnerabilities on **lab-owned equipment only**. Not for attacking random targets. Egyptian Law 175/2018 on cybercrime makes unauthorized RF access a criminal offense, and practically most modern devices defeat naive replay anyway.
+1. Initializes only that one peripheral plus serial.
+2. Prints a known-good signature on boot (chip ID, firmware version,
+   register dump, etc.) so a missing/miswired part is obvious.
+3. Loops a primitive sense/transmit operation with serial output every
+   1–2 s.
+4. Runs cleanly with **no edits to `main.cpp`** and no risk of breaking
+   the v0.4 working feature set.
 
-Sub-GHz features will target fixed-code devices (PT2262 remotes, cheap doorbells, 433MHz weather stations) that the lab owns, in controlled conditions. The pedagogical story is "why fixed-code RF is insecure" — the classic Samy Kamkar framing. This is the angle that passes ethics review and is publishable.
+Only after the smoke test prints the expected signature on hardware do
+you integrate the peripheral into `main.cpp`. Document the smoke-test
+result (pass/fail, observed values, date) in `docs/test-log.md` before
+merging integration code. This rule exists because the CC1101 bring-up
+already broke the OLED once on shared SPI — see `CLAUDE.md` (legacy)
+"Current blocker" notes.
 
-## Current task: Sub-GHz (CC1101) bring-up
+Inconsistencies between sensors (bus contention, brownout, CS hygiene,
+shared-pin conflicts) must be caught at the smoke-test stage, not after
+integration.
 
-Planned features once hardware is confirmed:
+## UI / mascot rule (every screen)
 
-1. Spectrum Analyzer — sweep 300-348 / 387-464 / 779-928 MHz bands, OLED RSSI bar graph per channel, find active transmitters
-2. Signal Capture + Replay — fixed-code only, captures OOK signals from lab devices, shows decoded bits on OLED, replay on button press
-3. Protocol Analyzer — rc-switch decoder, live protocol/bits/value display
-4. RSSI Live Meter — lock to user-chosen frequency, show live RSSI (fox-hunt mode)
-5. Jamming Detector — stretch feature, defensive tool that alerts when noise floor on 433.92MHz spikes
+Every user-facing screen and every interaction wires a mascot mood. The
+mascot is a first-class UX element, not decoration:
 
-Libraries: `lsatan/SmartRC-CC1101-Driver-Lib` + `sui77/rc-switch`
+- **On screen entry:** set an idle mood appropriate to the screen
+  (`THINKING` for menus, `WORKING` for active scans, `WAVING` while a
+  scan is in flight).
+- **On result:** transition to `HAPPY` / `SUCCESS` on a positive event
+  (AP found, card read, signal captured, replay accepted),
+  `SAD` / `FAIL` on a negative one (no AP, no card, no signal, replay
+  rejected), `ANGRY` on attack-class start (deauth burst, replay TX).
+- **Available moods:** IDLE, HAPPY, THINKING, SAD, ANGRY, SLEEPING,
+  SUCCESS, FAIL, WORKING, WAVING (preserve from v0.4).
 
-## Current blocker
+Full mood animations and gamification (score, streaks, screen-corner
+mini-mascot) are **lower priority than sensor work** — stub the mood
+call (`triggerReaction(MOOD_X, ...)`) on every screen now, polish
+animations later. Do not ship a screen with no mascot mood call.
 
-CC1101 wiring attempt caused the OLED to stop working mid-session (symptoms: stuck on boot splash, never reached menu). Removed CC1101 entirely — main firmware now builds and runs fine again. Need to re-attempt the wiring more carefully.
+## WiFi attack reference — ESP32 Marauder
 
-Last smoke test result before things broke: `CC1101: Connection error` — never got a valid PARTNUM/VERSION response from the chip. Suspected causes in order of likelihood:
+For Wi-Fi feature development (F4/F5/F6) consult ESP32 Marauder
+(`https://github.com/justcallmekoko/ESP32Marauder`) as a reference for
+known-working ESP32 Wi-Fi attack code paths (deauth frame structure,
+beacon spam, evil-twin SoftAP setup, channel-hop timing). **Study,
+don't copy** — VariOne is closed source and Marauder is GPL. Port
+*behavior and constraints*, not source files. Note any Marauder
+technique you adopt in the file header comment plus a one-liner in
+`docs/test-log.md`.
 
-1. Loose female-to-male jumper on one or more of the 7 wires
-2. MISO/MOSI swap
-3. Power brownout (CC1101 + OLED + ESP32 sharing weak supply)
-4. Wrong pin on module — but pinout was verified against Ebyte V2.0 datasheet, matches what we wired
+## Wi-Fi revamp status (active)
 
-## Recommended next steps
+Treat the current Wi-Fi feature set as **not complete and not trusted**.
+The old v0.4 Wi-Fi screens are allowed to compile, but F4/F5/F6 need a
+real revamp before demo readiness:
 
-1. Confirm main.cpp firmware still runs cleanly (OLED boot animation, menu navigation, WiFi scan all work)
-2. Re-wire CC1101 carefully — multimeter-verify 3.3V on VCC pin, press every jumper firmly, verify no pins are shorted to neighbors
-3. Use a separate PlatformIO env (`cc1101_test`) with `src/cc1101_test.cpp` to probe the chip via raw SPI — do NOT touch main.cpp until the smoke test responds correctly
-4. Target expected output: `CC1101: Connection OK` with PARTNUM=0x00 and VERSION=0x04 or 0x14
-5. Only integrate Sub-GHz features into main.cpp once the smoke test passes
-6. When adding SD card later: move SD to HSPI (SCK=14, MISO=12, MOSI=13, CS=15) to avoid the known SmartRC issue #40 conflict on shared VSPI
+- Rebuild AP scan, station/client discovery, selected-target state,
+  deauth, evil twin, and portal as one coherent workflow.
+- Do not preserve old Wi-Fi behavior just because it exists in
+  `main.cpp`; preserve only behavior that still matches the PRD and works
+  on hardware.
+- Keep the hard safety rails: no broadcast deauth, no unselected station
+  target, no deauth and evil twin at the same time, no real-world brand
+  impersonation.
+- The all-client demo path is allowed only as **All discovered clients**:
+  after selecting a lab-owned AP and running station discovery, the
+  firmware may loop over those discovered station MACs and send individual
+  unicast frames. It must never fall back to `FF:FF:FF:FF:FF:FF`.
+- Portal rebrand testing is allowed only through generic lab/demo themes.
+  Theme text/colors may change; real bank, ISP, university, telco, or
+  platform names/logos are not allowed.
+- ESP32-WROOM-32D N4 is dual-core, but Wi-Fi constraints here are radio
+  constraints, not single-core CPU constraints.
 
-## Useful technical details
+## Hard rules — never violate
 
-- `esp_log_level_set("wifi", ESP_LOG_NONE)` silences wifi driver logs
-- Safe boot for CC1101: `pinMode(27, OUTPUT); digitalWrite(27, HIGH)` must be called BEFORE any SPI activity — prevents bus conflict during boot
-- `IRAM_ATTR` on all promiscuous callbacks
-- Deauth attack uses `WIFI_AP_STA + softAP("v", nullptr, ch, 1)` hidden to unlock WIFI_IF_AP for esp_wifi_80211_tx
-- Beacon frame built manually, 100 byte buffer, channels 1/6/11
-- Evil Twin: DNSServer port 53 wildcard + WebServer port 80, captive portal endpoints for Android/iOS/Windows
-- Credentials saved to /creds.txt on SD, appended with timestamp
-- CC1101 library requires `setSpiPin()` and `setGDO0()` calls BEFORE `Init()`
-- Mascot: 16 poses in design files, drawn via U8g2 primitives, blue/white robot-panda with visor, VariOne logo on chest
+- **Never** broadcast deauth (`FF:FF:FF:FF:FF:FF`). "All clients" means
+  all discovered stations under the selected lab BSSID, sent as individual
+  unicast frames only. Do not add a flag to enable broadcast fallback.
+- **Never** run deauth and the rogue AP simultaneously (PRD §9.6).
+- **Never** target a station or BSSID that the operator has not
+  explicitly selected from the F4 scan results.
+- **Never** impersonate a specific real-world brand in the captive
+  portal HTML (no bank, ISP, telco, or platform names or logos). The
+  page stays generic.
+- **Never** write an unmasked PAN to the SD card or to the OLED. Mask
+  to last-4 (`**** **** **** 1234`) at the parser, not at the display
+  layer.
+- **Never** transmit captured data off-board over the network.
+- **Never** add features outside the PRD scope without an explicit
+  request and a PRD update in the same change.
 
-## Mascot mood triggers
+## Demo context (so you understand why constraints exist)
 
-```
-WiFi found          -> HAPPY
-WiFi not found      -> SAD
-Scan running        -> WAVING (animated arm)
-Packet monitor      -> WORKING
-Probe found         -> HAPPY
-Client scan         -> THINKING
-Deauth start        -> ANGRY
-Beacon spam         -> HAPPY
-Evil Twin up        -> WORKING
-Credential captured -> SUCCESS
-```
+The device is a graduation project for CIC New Cairo, supervised by
+Dr. Ahmed Gaber, operated only inside three formally authorized test
+environments. The audience is non-technical. The goal is awareness,
+not exploitation. Every safety guard above exists because a reviewer
+will ask about it.
 
-Available moods: IDLE, HAPPY, THINKING, SAD, ANGRY, SLEEPING, SUCCESS, FAIL, WORKING, WAVING
+## When in doubt
 
-## Documentation status
+Prefer the smaller, safer change. Prefer asking over guessing. Prefer
+matching the PRD over improving on it.
 
-- IEEE 1016-2009 compliant design doc exists (35 pages)
-- Presentation slides done
-- 3D printed enclosure under consideration for final presentation
-- No README yet (this file is the closest thing — can be extended into one)
+## Pin-map reconciliation note (open)
 
-## How Claude Code should work on this
-
-- Always confirm main.cpp builds before touching it
-- Use the separate test environment for any hardware bring-up (SPI probes, I2C scans, etc)
-- Preserve the v0.4 feature set — never regress working functionality
-- When adding new features, follow the existing pattern: AppState enum entry, a draw function, a start/stop pair, and menu integration
-- Mascot mood triggers should be added for any new user-facing action
-- SD logging should be optional (graceful fallback if card missing)
+The PRD §7.2 pin map has been reconciled to the current working firmware:
+CC1101 CSN=15, GDO0=4, PN532 on I²C, buttons LEFT=14/UP=26/RIGHT=32/DOWN=33,
+IR RX=36, IR TX=25 planned. The **working firmware wins** if a future doc
+drifts again. Do not move a working pin to satisfy an old note — flag the
+conflict and update the PRD instead.

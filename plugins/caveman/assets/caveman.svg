@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Caveman</title>
+  <desc id="desc">Minimal stone badge icon for Caveman plugin.</desc>
+  <rect width="256" height="256" rx="48" fill="#6B7280"/>
+  <path d="M61 164c11-47 42-76 72-76 29 0 54 25 62 71 3 17-10 33-27 33H88c-18 0-31-12-27-28Z" fill="#F3E2C6"/>
+  <path d="M80 107c15-31 44-49 74-41 24 7 40 27 45 52-19-16-45-21-69-14-21 6-37 19-50 3Z" fill="#3F2E21"/>
+  <circle cx="105" cy="139" r="9" fill="#1F2937"/>
+  <circle cx="152" cy="139" r="9" fill="#1F2937"/>
+  <path d="M111 166c12 9 25 9 37 0" fill="none" stroke="#1F2937" stroke-width="10" stroke-linecap="round"/>
+  <path d="M64 192h128l-33 35h-62l-33-35Z" fill="#4B5563"/>
+</svg>

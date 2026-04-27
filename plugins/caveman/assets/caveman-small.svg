@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Caveman</title>
+  <desc id="desc">Small Caveman plugin icon.</desc>
+  <rect width="64" height="64" rx="14" fill="#6B7280"/>
+  <path d="M16 41c3-13 11-21 19-21 7 0 14 7 16 20 1 5-3 8-8 8H23c-5 0-8-3-7-7Z" fill="#F3E2C6"/>
+  <path d="M20 27c4-8 11-12 19-10 6 2 10 7 12 13-5-4-12-5-18-3-6 1-10 5-13 0Z" fill="#3F2E21"/>
+  <circle cx="27" cy="35" r="2.5" fill="#1F2937"/>
+  <circle cx="39" cy="35" r="2.5" fill="#1F2937"/>
+  <path d="M29 42c3 2 6 2 9 0" fill="none" stroke="#1F2937" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

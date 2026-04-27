@@ -1,0 +1,10 @@
+{
+    "C_Cpp.default.configurationProvider": "platformio.platformio-ide",
+    "C_Cpp.errorSquiggles": "enabled",
+    "files.associations": {
+        "*.h": "cpp",
+        "*.hpp": "cpp",
+        "*.ino": "cpp"
+    },
+    "platformio-ide.disablePIOHomeStartup": true
+}
