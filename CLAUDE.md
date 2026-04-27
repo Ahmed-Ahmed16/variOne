@@ -41,10 +41,15 @@ Quick references inside the PRD:
   `PIN_NFC_SS = 27` from a prior SPI plan; these are unused in I²C mode
   but kept as no-ops. Do **not** switch PN532 to SPI mode without
   explicit instruction.
-* CC1101 + microSD share VSPI (SCK=18, MISO=19, MOSI=23) with separate
-  CS lines. Every transaction must hold the SPI bus mutex defined in
-  `src/core/SpiBus.*`. Current working wiring uses CC1101 CSN=GPIO 15,
-  CC1101 GDO0=GPIO 4, and SD CS=GPIO 5.
+* CC1101 is the sole device on VSPI (SCK=18, MISO=19, MOSI=23) with
+  CS on GPIO 15. No SPI mutex is required since no other peripheral
+  shares this bus. Current working wiring uses CC1101 CSN=GPIO 15,
+  CC1101 GDO0=GPIO 4.
+* The microSD card runs on a **dedicated SPI bus** (SCK=27, MISO=16,
+  MOSI=17, CS=5), separate from VSPI. The SD driver initializes its own
+  `SPIClass` instance on these pins — it does **not** use the default
+  `SPI` object. This eliminates CC1101/SD bus contention from earlier
+  hardware revisions.
 * CC1101 is **3.3 V only** on VCC. Never suggest 5 V on the CC1101.
 * 4 buttons, all `INPUT_PULLUP`. Working pinout: LEFT=14, UP=26,
   RIGHT=32, DOWN=33. Treat menu navigation as 4-way (UP/DOWN scroll,

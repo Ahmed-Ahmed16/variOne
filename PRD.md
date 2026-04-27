@@ -34,7 +34,7 @@ The core insight driving the project: in a market where security education is un
 
 ### 2.1 Prior art and references
 
-- **ESP32 Marauder** (`https://github.com/justcallmekoko/ESP32Marauder`) — open-source ESP32 Wi-Fi pentest firmware. We treat it as a behavioral reference for F4–F6: deauth frame structure, beacon spam pacing, VariPortal SoftAP setup, channel-hop strategy. VariOne does **not** vendor or fork Marauder source (license incompatibility — Marauder is GPL, VariOne is closed). Behaviors and constraints are reimplemented from scratch with attribution in the relevant module headers.
+- **ESP32 Marauder** (`https://github.com/justcallmekoko/ESP32Marauder`) — open-source ESP32 Wi-Fi pentest firmware. We treat it as a behavioral reference for F4–F6: deauth frame structure, beacon spam pacing, evil-twin SoftAP setup, channel-hop strategy. VariOne does **not** vendor or fork Marauder source (license incompatibility — Marauder is GPL, VariOne is closed). Behaviors and constraints are reimplemented from scratch with attribution in the relevant module headers.
 - **Samy Kamkar's RollJam / fixed-code rolling-code work** — pedagogical framing for why fixed-code RF is insecure (basis of S1 narrative).
 - **Flipper Zero** — adjacent product class; informs the menu/UX expectations of a non-technical audience seeing the device for the first time, but no code or assets are reused.
 
@@ -44,16 +44,16 @@ The core insight driving the project: in a market where security education is un
 
 ### 3.1 In-scope (MVP)
 
-| # | Capability | Purpose                                                                                                   |
+| # | Capability | Purpose |
 |---|---|---|
-| G1 | Sub-GHz capture and replay (300–928 MHz, focus 433.92 MHz) | Demonstrate fixed-code remote attack against the team's own 1988 FIAT 128 with custom-built center lock   |
+| G1 | Sub-GHz capture and replay (300–928 MHz, focus 433.92 MHz) | Demonstrate fixed-code remote attack against the team's own 1988 FIAT 128 with custom-built center lock |
 | G2 | NFC/RFID read at ISO/IEC 14443A | Demonstrate passive data leakage from contactless bank cards (PAN, expiry, name) and transit/access cards |
-| G3 | IR receive and transmit | Demonstrate "universal remote" effect on TVs, ACs, projectors — high-impact, low-stakes audience hook     |
-| G4 | Wi-Fi 2.4 GHz scan (APs and stations) | Reconnaissance baseline                                                                                   |
-| G5 | Wi-Fi targeted deauthentication | Demonstrate Layer 2 denial-of-service against WPA2 networks                                               |
-| G6 | Wi-Fi rogue AP with captive portal | Demonstrate credential-capture phase of an "VariPortal" attack                                            |
-| G7 | SD card persistence of all captures | Permit later replay; permit data-decay/durability research                                                |
-| G8 | OLED-driven menu UI with 4-button navigation | Standalone, untethered operation during the demo                                                          |
+| G3 | IR receive and transmit | Demonstrate "universal remote" effect on TVs, ACs, projectors — high-impact, low-stakes audience hook |
+| G4 | Wi-Fi 2.4 GHz scan (APs and stations) | Reconnaissance baseline |
+| G5 | Wi-Fi targeted deauthentication | Demonstrate Layer 2 denial-of-service against WPA2 networks |
+| G6 | Wi-Fi rogue AP with captive portal | Demonstrate credential-capture phase of an "evil twin" attack |
+| G7 | SD card persistence of all captures | Permit later replay; permit data-decay/durability research |
+| G8 | OLED-driven menu UI with 4-button navigation | Standalone, untethered operation during the demo |
 
 ### 3.2 Out-of-scope (this MVP)
 
@@ -97,7 +97,7 @@ The core insight driving the project: in a market where security education is un
 - **S1 — "Your car is not locked":** Operator captures the unlock signal from the team-owned FIAT 128 once, then replays it from across the room. Door unlocks.
 - **S2 — "Your wallet is shouting":** Operator reads the operator's own bank card, displays PAN and expiry on the OLED, and explains what an attacker on a crowded metro could collect at <5 cm range.
 - **S3 — "Universal disrespect":** Operator captures the lab AC remote, then replays it. Audience laughs. Then the operator explains the same chip family is in IR-controlled industrial equipment.
-- **S4 — "Your network is a polite host":** Operator selects a lab-controlled SSID. The VariPortal (cloned AP + captive portal) starts on the target channel, then deauthentication begins — the audience watches the lab phone drop off the real AP and automatically associate with the cloned SSID, where it is presented with a credential-capture portal themed to match the lab environment. This is the full, uninterrupted VariPortal attack chain running in real time, demonstrating the actual threat as it would occur in the wild. See §9.6.1 for the single-radio technical approach and §5 for the authorization framework.
+- **S4 — "Your network is a polite host":** Operator selects a lab-controlled SSID. The VariPortal (cloned AP + captive portal) starts on the target channel, then deauthentication begins — the audience watches the lab phone drop off the real AP and automatically associate with the cloned SSID, where it is presented with a credential-capture portal themed to match the lab environment. This is the full, uninterrupted evil-twin attack chain running in real time, demonstrating the actual threat as it would occur in the wild. See §9.6.1 for the single-radio technical approach and §5 for the authorization framework.
 
 ---
 
@@ -129,7 +129,7 @@ The team operates in awareness of **Law 175 of 2018 (Anti-Cyber and Information 
 All Wi-Fi, RF, NFC, and IR capabilities are **unrestricted within the three authorized environments** listed in §5.1. The device is a penetration-testing and awareness tool; artificial limitations that prevent the demonstration of real-world attack chains defeat the project's educational purpose. Operational rules reflect authorization scope, not firmware restrictions:
 
 - **Wi-Fi deauthentication** may target any station or set of stations on the authorized test network, including broadcast deauth (`FF:FF:FF:FF:FF:FF`), single-station unicast, or all-discovered-station sweeps. The operator selects the mode; the firmware does not refuse any lawful targeting option within the authorized environment.
-- **Deauthentication and the cloned AP (VariPortal) may run simultaneously** to demonstrate the full VariPortal attack chain in real time. See §9.6.1 for the single-radio technical approach and constraints.
+- **Deauthentication and the cloned AP (VariPortal) may run simultaneously** to demonstrate the full evil-twin attack chain in real time. See §9.6.1 for the single-radio technical approach and constraints.
 - **Portal theming** may reproduce the branding, layout, and login flow of any authorized target (including the CIC university portal and partner organization portals covered by the signed NDAs). Realistic impersonation is the point of the test — a generic page does not measure the target's actual exposure. Non-authorized brands are not used.
 - Sub-GHz transmission is bounded to power levels sufficient for the demo room.
 - IR transmission targets only equipment present in the demo room.
@@ -173,18 +173,20 @@ All Wi-Fi, RF, NFC, and IR capabilities are **unrestricted within the three auth
                           │ NFC  │    │ card   │
                           └──────┘    └────────┘
                           
-                            (all peripherals on shared VSPI
-                             except OLED on I2C and IR which
-                             is bit-banged GPIO)
+                            (CC1101 on VSPI, SD on dedicated
+                             SPI bus GPIO 27/16/17/5,
+                             OLED + PN532 on I2C, IR is
+                             bit-banged GPIO)
 ```
 
 ### 6.2 Bus topology
 
 - **I²C bus** (default ESP32 pins, SDA=21 / SCL=22): SH1106 OLED **and** PN532 NFC (PN532 in I²C mode at address 0x24). This is the verified working configuration in the v0.4 firmware. Earlier drafts of this PRD specified PN532 on SPI; that was reversed because the I²C bring-up succeeded first and is shipping.
-- **VSPI bus** (shared): CC1101 and microSD. Each peripheral has its own chip-select line.
+- **VSPI bus** (CC1101 only): SCK=18, MISO=19, MOSI=23, CS=15. CC1101 is the sole device on VSPI.
+- **SD SPI bus** (dedicated): SCK=27, MISO=16, MOSI=17, CS=5. The microSD card runs on its own SPI bus using GPIO 27/16/17, **not** on the shared VSPI. This eliminates the CC1101/SD bus contention that previously required mutex coordination for every SPI transaction.
 - **GPIO direct**: IR TX LED, IR RX TSOP, 4 user buttons.
 
-Sharing VSPI across CC1101 and SD is well-trodden and works correctly *if* every driver de-asserts its CS line and is mutex-guarded. We codify this in the firmware (§8.2). PN532 on the OLED I²C bus adds one device at a non-conflicting address (0x24 vs OLED 0x3C); the bus has spare bandwidth at the 100 kHz default speed.
+CC1101 is the sole device on the VSPI bus, so no SPI mutex is required for CC1101 transactions. The microSD card runs on a separate, dedicated SPI bus (GPIO 27/16/17/5), eliminating the bus contention that was a risk in earlier hardware revisions. PN532 on the OLED I²C bus adds one device at a non-conflicting address (0x24 vs OLED 0x3C); the bus has spare bandwidth at the 100 kHz default speed.
 
 ### 6.3 Voltage and current
 
@@ -304,16 +306,16 @@ This pin map reflects the **as-built v0.4 working configuration**. Earlier draft
 | GPIO 21 | I²C SDA | OLED + PN532 | Shared I²C bus, OLED 0x3C, PN532 0x24 |
 | GPIO 22 | I²C SCL | OLED + PN532 | Shared I²C bus |
 | GPIO 13 | PN532 IRQ | PN532 | Wire **physically connected**, currently unused by firmware (`Adafruit_PN532(255, 255)`). Reserved for future interrupt-driven card-present detection. |
-| GPIO 18 | VSPI SCK | CC1101 + SD | Shared SPI clock |
-| GPIO 19 | VSPI MISO | CC1101 + SD | Shared SPI MISO |
-| GPIO 23 | VSPI MOSI | CC1101 + SD | Shared SPI MOSI |
+| GPIO 18 | VSPI SCK | CC1101 | CC1101 SPI clock (CC1101 is sole VSPI device) |
+| GPIO 19 | VSPI MISO | CC1101 | CC1101 SPI data in |
+| GPIO 23 | VSPI MOSI | CC1101 | CC1101 SPI data out |
 | GPIO 15 | CC1101 CSN | CC1101 | Current working wiring; must be set HIGH at boot before SPI init |
 | GPIO 4 | CC1101 GDO0 | CC1101 | RX/TX state, RSSI gate, edge timing |
 | — | CC1101 GDO2 | CC1101 | Leave unconnected (per Ebyte E07-M1101D V2.0 wiring) |
-| GPIO 5 | SD CS | microSD | Add SD module on VSPI; if SmartRC issue #40 bites, re-plan the alternate bus against this table first |
+| GPIO 5 | SD CS | microSD | Dedicated SD SPI bus (not on VSPI) |
 | GPIO 25 | IR TX | IR LED driver | 38 kHz LEDC carrier, NPN driver (planned — LED not yet purchased) |
 | GPIO 36 | IR RX | VS1838B | Input-only pin, fine for demodulated IR input |
-| GPIO 27 | — | legacy NFC SS define | Unused no-op from the old PN532 SPI plan; do not wire PN532 to SPI without explicit instruction |
+| GPIO 27 | SD SCK | microSD | Dedicated SD SPI clock (not on VSPI) |
 | GPIO 14 | Button LEFT (BACK) | tactile sw | INPUT_PULLUP |
 | GPIO 26 | Button UP | tactile sw | INPUT_PULLUP |
 | GPIO 32 | Button RIGHT (SELECT) | tactile sw | INPUT_PULLUP |
@@ -323,11 +325,13 @@ This pin map reflects the **as-built v0.4 working configuration**. Earlier draft
 | GPIO 6–11 | — | (flash, reserved) | DO NOT USE |
 | GPIO 12 | — | (strapping, reserved) | Leave floating unless the full pin map is revised |
 | GPIO 1, 3 | UART0 | USB serial debug | Leave for serial console |
-| GPIO 16, 17 | — | reserved / spare | Available |
+| GPIO 16 | SD MISO | microSD | Dedicated SD SPI data in |
+| GPIO 17 | SD MOSI | microSD | Dedicated SD SPI data out |
 
 ### 7.3 Wiring notes
 
-- All SPI peripheral CS lines must be initialized HIGH at boot to avoid bus contention before any driver runs. The firmware sets the CS pin HIGH as the first action in each driver's `begin()`. Specifically, `digitalWrite(PIN_CC1101_CSN, HIGH)` must run **before** any SPI activity to prevent the bus conflict that previously crashed the OLED.
+- CC1101 CS (GPIO 15) must be initialized HIGH at boot before any SPI activity. The firmware sets the CS pin HIGH as the first action in the CC1101 driver's `begin()`. Specifically, `digitalWrite(PIN_CC1101_CSN, HIGH)` must run **before** any SPI activity to prevent the bus conflict that previously crashed the OLED.
+- The microSD card runs on a **dedicated SPI bus** (SCK=27, MISO=16, MOSI=17, CS=5), separate from the CC1101's VSPI bus. This eliminates the SPI bus contention between CC1101 and SD that was a problem in earlier hardware revisions. The SD card driver initializes its own `SPIClass` instance on the dedicated pins — it does not share the default VSPI `SPI` object used by CC1101.
 - The PN532 module is operated in **I²C mode**: SEL0=1, SEL1=0 (verify against silkscreen). Address 0x24, SDA=21, SCL=22, **IRQ physically wired to GPIO 13** (firmware currently polls and ignores the IRQ — `Adafruit_PN532(255, 255)` — but the wire is there for future interrupt-driven detection without rework).
 - The CC1101 module on hand is the Ebyte E07-M1101D V2.0 (433 MHz). Antenna already attached. GDO2 is left unconnected.
 - The IR LED is driven through an NPN (e.g. 2N3904 or BC547) with the LED in the collector path and a current-limiting resistor (100 Ω for ~30 mA continuous, lower for pulsed). The ESP32 GPIO drives the base through a 1 kΩ resistor.
@@ -393,14 +397,14 @@ lib_deps =
 
 ### 8.2 Module breakdown
 
-The codebase is organized around one C++ class per peripheral and one orchestrator. All hardware-touching modules acquire a shared `SPIBus` mutex around any transaction.
+The codebase is organized around one C++ class per peripheral and one orchestrator. CC1101 is the sole device on the VSPI bus; the microSD card runs on a dedicated SPI bus (GPIO 27/16/17/5) and does not share VSPI. No cross-peripheral SPI mutex is required.
 
 ```
 src/
 ├── main.cpp                  # setup(), loop(), top-level state
 ├── config.h                  # PIN_*, FREQ_*, version, build flags
 ├── core/
-│   ├── SpiBus.{h,cpp}        # SPI mutex + bus settings switch helpers
+│   ├── SpiBus.{h,cpp}        # SPI helpers; CC1101 on VSPI, SD on dedicated bus (GPIO 27/16/17/5)
 │   ├── EventLoop.{h,cpp}     # cooperative scheduler
 │   ├── Logger.{h,cpp}        # serial + SD log
 │   └── StatusLed.{h,cpp}     # GPIO 2 patterns
@@ -556,7 +560,7 @@ The operator selects the mode on the deauth config screen before starting the bu
 
 ### 9.6 F6 — VariPortal (cloned AP with credential-capture portal)
 
-**Purpose.** Demonstrate the complete VariPortal attack chain — cloned SSID + captive portal + credential capture — in a controlled environment, showing the authorized target audience how their users would experience a real attack against their infrastructure.
+**Purpose.** Demonstrate the complete evil-twin attack chain — cloned SSID + captive portal + credential capture — in a controlled environment, showing the authorized target audience how their users would experience a real attack against their infrastructure.
 
 **Current implementation status.** This feature is under active revamp. The
 portal must support realistic theming (including authorized target branding), log all submissions, and operate concurrently with F5 deauth for the full attack chain demo.
@@ -619,25 +623,16 @@ This split keeps the portal responsive while deauth runs at full rate. FreeRTOS 
 
 **Purpose.** Persist captures across reboots; enable research question R1 (decay).
 
-**Technical approach.** FAT32 SD card mounted via the Arduino `SD` library on the shared VSPI bus. Directory layout:
+**Technical approach.** FAT32 SD card mounted via the Arduino `SD` library on the dedicated SPI bus (SCK=27, MISO=16, MOSI=17, CS=5). Directory layout:
 
 ```
 /captures/
    /subghz/<UTC-timestamp>_<freq>kHz.json
    /nfc/<UTC-timestamp>_<uid>.json
    /ir/<UTC-timestamp>_<protocol>.json
-   /portal.log              (retained for post-demo audit)
-/portal-themes/
-   /generic-network/        (bundled default)
-   /generic-campus/         (bundled default)
-   /generic-router/         (bundled default)
-   /<target-name>/          (authorized target themes)
-       index.html
-       style.css
-       theme.json
-       /img/                (logos, backgrounds)
-/system.log
-/config.json
+   /portal.log              (wiped end of session)
+/system.log              (rolling, capped at 1 MB)
+/config.json             (device config: brightness, default freq, deauth timeout, etc.)
 ```
 
 Each capture file embeds a schema version and a SHA-1 of the payload for the decay study (R1: re-read SHA-1 vs. original at intervals).
@@ -840,25 +835,25 @@ Each feature in §9 has its acceptance criteria as the test script. Pass/fail re
 ### 14.1 Roles (one primary owner per area; pairs encouraged)
 
 - **Engineer A — Hardware/RF lead:** wiring harness, PCB/perfboard, antennas, CC1101.
-- **Engineer B — Firmware core:** main loop, SPI bus mutex, SD, OLED, menu, input.
+- **Engineer B — Firmware core:** main loop, SPI bus init, SD, OLED, menu, input.
 - **Engineer C — NFC:** PN532 + EMV-lite parser.
-- **Engineer D — Wi-Fi:** scan + deauth + VariPortal 
+- **Engineer D — Wi-Fi:** scan + deauth + evil twin + portal.
 - **Engineer E — IR + Sub-GHz codec + integration testing + documentation.**
 
 ### 14.2 Schedule
 
-| Day | Hardware (A)                                     | Core (B)                                                             | NFC (C)                                        | Wi-Fi (D)                             | IR/SubGHz/Test (E)                         |
-| --- | ------------------------------------------------ | -------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------- | ------------------------------------------ |
-| 1   | Wire harness, voltage check, CC1101 antenna swap | PlatformIO project skeleton, OLED splash, button scan, serial logger | PN532 I²C bring-up, UID read                   | Wi-Fi AP scan working                 | IR RX bring-up, document protocols seen    |
-| 2   | SD module wired and validated                    | SD mount, capture-store API, menu skeleton                           | EMV PPSE/AID parse against test card           | Station scan in promiscuous mode      | IR TX bring-up, NEC protocol round-trip    |
-| 3   | Enclosure CAD v1 sent to print                   | Menu navigation full, settings page                                  | PAN/expiry parse + masking + SD write          | Deauth frame crafting + injection     | Sub-GHz codec stub, CC1101 register init   |
-| 4   | Enclosure fit check, antenna mount               | Status LED patterns, error toast UI                                  | NFC capture file format finalised              | Deauth target-binding + safety guards | Sub-GHz capture (RAW) on bench transmitter |
-| 5   | —                                                | Logger to SD, system.log rotation                                    | NFC done; supports E for sub-GHz schema parity | VariPortal                            | Sub-GHz replay vs. FIAT key bench test     |
-| 6   | —                                                | Performance pass (free RAM, loop latency)                            | Hardening + viva-prep notes                    | Captive portal HTML + DNS hijack      | FIAT live test in lab parking              |
-| 7   | Final enclosure assembly                         | Integration freeze for menu                                          | —                                              | Portal credential capture to SD       | IR universal remote presets bundled        |
-| 8   | —                                                | All-feature dry run #1                                               | All-feature dry run #1                         | All-feature dry run #1                | All-feature dry run #1, fix list           |
-| 9   | —                                                | Dry run #2 with external observer                                    | "                                              | "                                     | "                                          |
-| 10  | Demo logistics, cabling                          | Live demo support                                                    | Live demo support                              | Live demo support                     | Live demo + viva                           |
+| Day | Hardware (A) | Core (B) | NFC (C) | Wi-Fi (D) | IR/SubGHz/Test (E) |
+|---|---|---|---|---|---|
+| 1 | Wire harness, voltage check, CC1101 antenna swap | PlatformIO project skeleton, OLED splash, button scan, serial logger | PN532 I²C bring-up, UID read | Wi-Fi AP scan working | IR RX bring-up, document protocols seen |
+| 2 | SD module wired and validated | SD mount, capture-store API, menu skeleton | EMV PPSE/AID parse against test card | Station scan in promiscuous mode | IR TX bring-up, NEC protocol round-trip |
+| 3 | Enclosure CAD v1 sent to print | Menu navigation full, settings page | PAN/expiry parse + masking + SD write | Deauth frame crafting + injection | Sub-GHz codec stub, CC1101 register init |
+| 4 | Enclosure fit check, antenna mount | Status LED patterns, error toast UI | NFC capture file format finalised | Deauth target-binding + safety guards | Sub-GHz capture (RAW) on bench transmitter |
+| 5 | — | Logger to SD, system.log rotation | NFC done; supports E for sub-GHz schema parity | SoftAP rogue cloned SSID | Sub-GHz replay vs. FIAT key bench test |
+| 6 | — | Performance pass (free RAM, loop latency) | Hardening + viva-prep notes | Captive portal HTML + DNS hijack | FIAT live test in lab parking |
+| 7 | Final enclosure assembly | Integration freeze for menu | — | Portal credential capture to SD | IR universal remote presets bundled |
+| 8 | — | All-feature dry run #1 | All-feature dry run #1 | All-feature dry run #1 | All-feature dry run #1, fix list |
+| 9 | — | Dry run #2 with external observer | " | " | " |
+| 10 | Demo logistics, cabling | Live demo support | Live demo support | Live demo support | Live demo + viva |
 
 ### 14.3 Daily ritual
 
@@ -870,7 +865,7 @@ Each feature in §9 has its acceptance criteria as the test script. Pass/fail re
 
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
-| RK1 | CC1101 fails on shared SPI due to timing/CS hygiene | Medium | High | Strict mutex; CS HIGH at boot; per-driver SPI settings (`SPISettings`) re-applied each transaction |
+| RK1 | CC1101 SPI issues due to timing/CS hygiene | Low | Medium | **Largely mitigated.** SD card moved to dedicated SPI bus (GPIO 27/16/17/5), eliminating the CC1101/SD VSPI contention that was the original risk. CC1101 is now the sole device on VSPI. CS HIGH at boot still required. If a future peripheral is added to VSPI, re-introduce the SPI mutex |
 | RK2 | FIAT 128 lock harder to capture than expected (signal short, room noisy) | Low | High | Capture in quiet RF environment first (anechoic-ish room or remote in direct contact); fallback to a bench-transmitter demo |
 | RK3 | EMV parse fails on Egyptian card schemes (Meeza specifics) | Medium | Medium | Test against multiple test cards day 2–3; fall back to UID + ATQA display only for unsupported schemes |
 | RK4 | Deauth ineffective because lab AP has PMF on | Medium | Medium | Provision the lab AP with WPA2 + PMF disabled on a **fixed known channel** (e.g. channel 6) before the demo. Document AP model, firmware version, and channel in the demo kit checklist. This channel also becomes the VariPortal SoftAP channel for same-channel concurrent operation (§9.6.1) |
@@ -899,7 +894,81 @@ The MVP is a success on demo day if:
 
 ---
 
-## 17. Glossary
+## 17. Future Capabilities (Stretch — Not Confirmed for MVP)
+
+The following features are under consideration for post-MVP development or as stretch goals if the MVP timeline permits. They are documented here so that architectural decisions in the MVP do not accidentally block them, and so that the documentation and course-curriculum teams can plan around them.
+
+### 17.1 Cloud-based AI analysis pipeline (VariLearn)
+
+**Concept.** Captured data (sub-GHz signal recordings, NFC card metadata, Wi-Fi reconnaissance logs, VariPortal credential submissions) is uploaded from the device to a cloud endpoint, where an AI model processes the raw captures into structured educational material — lesson summaries, annotated attack breakdowns, risk assessments, and student-facing lab worksheets.
+
+**Why this matters.** The raw capture files (JSON edge arrays, hex UIDs, portal logs) are useful to the operator but meaningless to a student or a non-technical audience. An AI layer bridges that gap: it can take a sub-GHz capture and produce a narrative like "this 433.92 MHz OOK signal contains a 24-bit fixed code with no rolling component — here is why that is insecure, here is the countermeasure, here is what a secure implementation looks like." Scaling that across hundreds of captures and dozens of students is the difference between a one-off demo and a repeatable course curriculum.
+
+**Proposed architecture.**
+
+```
+ESP32 (capture) → SD card (local store)
+                      ↓
+              [Sync mode — ESP32 connects to a known
+               non-target Wi-Fi network and POSTs
+               capture files to the cloud endpoint]
+                      ↓
+         Cloud API (REST, HTTPS, authenticated)
+                      ↓
+         AI model (e.g. Claude API, OpenAI, or
+         self-hosted Ollama on a VPS)
+                      ↓
+         Processed output: lesson JSON, PDF worksheet,
+         annotated capture summary
+                      ↓
+         Returned to operator via web dashboard or
+         pulled back to SD on next sync
+```
+
+**ESP32 constraints and how to work around them.**
+
+- **Radio sharing.** The ESP32's single 2.4 GHz radio cannot upload to the cloud while running Wi-Fi attacks (deauth, VariPortal). Upload must happen in a dedicated **sync mode** where the ESP32 connects to a known, non-target Wi-Fi network (e.g. the lab's infrastructure SSID, a phone hotspot, or a dedicated upload AP). The menu would expose this as `Settings → Cloud Sync` or similar. The device is either in attack mode or in sync mode, never both.
+- **TLS/HTTPS memory overhead.** ESP32 has ~320 KB usable RAM. TLS handshakes for HTTPS consume ~40–60 KB. This is tight but feasible — the Arduino `WiFiClientSecure` library handles it, and Marauder already makes HTTPS calls for firmware updates on the same hardware. Keep the upload payload small (one capture file per request, not a batch dump).
+- **Upload format.** POST the raw capture JSON files as-is (they already have schemas from §11). The cloud AI processes them server-side. The ESP32 does not run any AI inference locally — it is a capture-and-upload client only.
+- **Authentication.** A device-specific API key stored in `/config.json` on the SD card, sent as a Bearer token in the upload header. Do not hardcode keys in firmware.
+- **Offline-first.** The device works fully without cloud access. SD card remains the primary store. Cloud sync is additive — if the network is unavailable, captures stay on the SD card and sync later.
+
+**AI model responsibilities.**
+
+- **Signal analysis:** Parse sub-GHz edge arrays, identify modulation scheme (OOK, FSK), detect fixed-code vs. rolling-code patterns, estimate protocol (PT2262, EV1527, KeeLoq), generate a human-readable summary with security assessment.
+- **NFC data annotation:** Take masked PAN + ATQA/SAK/AID metadata, explain what each field means, what an attacker could do with it, what the cardholder's countermeasures are (RFID-blocking sleeve, transaction alerts, contactless limit awareness).
+- **Wi-Fi attack debrief:** Take VariPortal logs (timestamps, association events, credential submissions), reconstruct the attack timeline, produce a lesson narrative: "at T+0 the deauth began, at T+3 the victim's device probed for the SSID, at T+5 it associated with the clone, at T+8 credentials were submitted — here is where each defensive layer (PMF, HTTPS certificate pinning, 2FA) would have stopped the chain."
+- **Output formats:** Structured JSON (for programmatic use), Markdown (for quick review), and optionally PDF (for printable student handouts).
+
+**Open questions (to resolve before implementation).**
+
+- Which AI provider? Claude API (Anthropic), OpenAI, or self-hosted (Ollama on the team's VPS)? Cost, latency, and data-residency implications differ.
+- Does the NDA with partner organizations permit uploading captured data (even masked) to a third-party cloud? If not, the AI must run on infrastructure the team controls.
+- Who builds and maintains the cloud backend? This is a separate engineering effort from the firmware — it needs its own owner.
+
+### 17.2 Cloud capture storage (VariCloud)
+
+**Concept.** In addition to the SD card, captured data is pushed to a cloud storage backend so that captures persist beyond the physical SD card, are accessible from any device, and can feed into the VariLearn AI pipeline (§17.1) or a web-based review dashboard.
+
+**Proposed architecture.**
+
+- **Storage backend:** Firebase Realtime Database or Firestore (free tier handles the expected volume), or a self-hosted REST API backed by PostgreSQL/SQLite on the team's VPS. Choose based on NDA constraints.
+- **Sync trigger:** Same sync mode as §17.1 — the ESP32 connects to a non-target SSID and uploads. Captures are uploaded individually as they sync, with a local flag on the SD marking each file as synced/unsynced.
+- **Conflict handling:** The SD card is the source of truth. Cloud is a replica. If a file exists on cloud but not on SD (SD was wiped or swapped), the cloud copy persists. If a file exists on SD but not on cloud (sync hasn't happened yet), it uploads on next sync.
+- **Data retention:** Cloud copies are retained indefinitely for the course curriculum and research data set. SD card copies may be wiped between demo sessions at the operator's discretion.
+
+**ESP32 limitations.**
+
+- Same radio-sharing constraint as §17.1 — sync mode is exclusive with attack mode.
+- Firebase client libraries exist for ESP32 (`Firebase-ESP32` by mobizt), but they add ~50–80 KB to the firmware binary. Budget this against the partition scheme.
+- Upload speed on ESP32 over Wi-Fi is typically 1–5 Mbps effective throughput. A typical capture file is <10 KB. Syncing 50 captures takes seconds, not minutes.
+- If using a custom REST API instead of Firebase, the ESP32 uses `HTTPClient` + `WiFiClientSecure` with a pinned server certificate.
+
+**Relationship to VariLearn.** VariCloud is the storage layer; VariLearn is the processing layer. They share the same cloud endpoint and the same sync mode. The upload path is: ESP32 → VariCloud (store) → VariLearn (process) → output (lessons, reports). If VariLearn is not built yet, VariCloud still has standalone value as a backup and data-aggregation layer.
+
+---
+
+## 18. Glossary
 
 - **AC** — Application Cryptogram (EMV)
 - **AID** — Application Identifier (EMV)
@@ -912,6 +981,9 @@ The MVP is a success on demo day if:
 - **SAK** — Select Acknowledge (ISO 14443A)
 - **SoftAP** — ESP32 software access point mode
 - **TSOP** — TSOP-series IR receiver IC family (Vishay)
+- **VariPortal** — VariOne's cloned-AP + captive-portal feature (F6), formerly called "evil twin" in prior drafts
+- **VariLearn** — Proposed cloud-based AI analysis pipeline that converts raw captures into educational material (§17.1, stretch)
+- **VariCloud** — Proposed cloud capture storage backend (§17.2, stretch)
 
 ---
 
@@ -999,10 +1071,12 @@ varione/
 #define PIN_CC1101_GDO0    4
 #define PIN_CC1101_GDO2   -1
 
-#define PIN_PN532_CS      27  // legacy no-op; PN532 ships on I2C
-#define PIN_PN532_IRQ     13
+#define PIN_PN532_IRQ     13  // wired but firmware polls; reserved for future IRQ-driven detection
 
 #define PIN_SD_CS          5
+#define PIN_SD_SCK        27  // dedicated SD SPI bus (not on VSPI)
+#define PIN_SD_MOSI       17
+#define PIN_SD_MISO       16
 
 #define PIN_IR_TX         25
 #define PIN_IR_RX         36
