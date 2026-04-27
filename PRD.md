@@ -34,7 +34,7 @@ The core insight driving the project: in a market where security education is un
 
 ### 2.1 Prior art and references
 
-- **ESP32 Marauder** (`https://github.com/justcallmekoko/ESP32Marauder`) — open-source ESP32 Wi-Fi pentest firmware. We treat it as a behavioral reference for F4–F6: deauth frame structure, beacon spam pacing, evil-twin SoftAP setup, channel-hop strategy. VariOne does **not** vendor or fork Marauder source (license incompatibility — Marauder is GPL, VariOne is closed). Behaviors and constraints are reimplemented from scratch with attribution in the relevant module headers.
+- **ESP32 Marauder** (`https://github.com/justcallmekoko/ESP32Marauder`) — open-source ESP32 Wi-Fi pentest firmware. We treat it as a behavioral reference for F4–F6: deauth frame structure, beacon spam pacing, VariPortal SoftAP setup, channel-hop strategy. VariOne does **not** vendor or fork Marauder source (license incompatibility — Marauder is GPL, VariOne is closed). Behaviors and constraints are reimplemented from scratch with attribution in the relevant module headers.
 - **Samy Kamkar's RollJam / fixed-code rolling-code work** — pedagogical framing for why fixed-code RF is insecure (basis of S1 narrative).
 - **Flipper Zero** — adjacent product class; informs the menu/UX expectations of a non-technical audience seeing the device for the first time, but no code or assets are reused.
 
@@ -44,16 +44,16 @@ The core insight driving the project: in a market where security education is un
 
 ### 3.1 In-scope (MVP)
 
-| # | Capability | Purpose |
+| # | Capability | Purpose                                                                                                   |
 |---|---|---|
-| G1 | Sub-GHz capture and replay (300–928 MHz, focus 433.92 MHz) | Demonstrate fixed-code remote attack against the team's own 1988 FIAT 128 with custom-built center lock |
+| G1 | Sub-GHz capture and replay (300–928 MHz, focus 433.92 MHz) | Demonstrate fixed-code remote attack against the team's own 1988 FIAT 128 with custom-built center lock   |
 | G2 | NFC/RFID read at ISO/IEC 14443A | Demonstrate passive data leakage from contactless bank cards (PAN, expiry, name) and transit/access cards |
-| G3 | IR receive and transmit | Demonstrate "universal remote" effect on TVs, ACs, projectors — high-impact, low-stakes audience hook |
-| G4 | Wi-Fi 2.4 GHz scan (APs and stations) | Reconnaissance baseline |
-| G5 | Wi-Fi targeted deauthentication | Demonstrate Layer 2 denial-of-service against WPA2 networks |
-| G6 | Wi-Fi rogue AP with captive portal | Demonstrate credential-capture phase of an "evil twin" attack |
-| G7 | SD card persistence of all captures | Permit later replay; permit data-decay/durability research |
-| G8 | OLED-driven menu UI with 4-button navigation | Standalone, untethered operation during the demo |
+| G3 | IR receive and transmit | Demonstrate "universal remote" effect on TVs, ACs, projectors — high-impact, low-stakes audience hook     |
+| G4 | Wi-Fi 2.4 GHz scan (APs and stations) | Reconnaissance baseline                                                                                   |
+| G5 | Wi-Fi targeted deauthentication | Demonstrate Layer 2 denial-of-service against WPA2 networks                                               |
+| G6 | Wi-Fi rogue AP with captive portal | Demonstrate credential-capture phase of an "VariPortal" attack                                            |
+| G7 | SD card persistence of all captures | Permit later replay; permit data-decay/durability research                                                |
+| G8 | OLED-driven menu UI with 4-button navigation | Standalone, untethered operation during the demo                                                          |
 
 ### 3.2 Out-of-scope (this MVP)
 
@@ -69,7 +69,7 @@ The core insight driving the project: in a market where security education is un
 
 - R1: What are the practical capture-to-replay success rates and signal decay characteristics for fixed-code sub-GHz remotes when stored on consumer-grade microSD over time?
 - R2: How does reception range for ISO 14443A varies with PN532 antenna geometry and target card type?
-- R3: How effective is single-radio Wi-Fi deauth → rogue-AP transition timing in convincing a target station to associate with the rogue AP?
+- R3: Under single-radio concurrent operation (deauth + VariPortal on the same channel), what is the median time-to-association for a deauthed station to connect to the cloned SSID, and how does deauth duty cycle affect portal responsiveness and capture success rate?
 
 ---
 
@@ -97,9 +97,7 @@ The core insight driving the project: in a market where security education is un
 - **S1 — "Your car is not locked":** Operator captures the unlock signal from the team-owned FIAT 128 once, then replays it from across the room. Door unlocks.
 - **S2 — "Your wallet is shouting":** Operator reads the operator's own bank card, displays PAN and expiry on the OLED, and explains what an attacker on a crowded metro could collect at <5 cm range.
 - **S3 — "Universal disrespect":** Operator captures the lab AC remote, then replays it. Audience laughs. Then the operator explains the same chip family is in IR-controlled industrial equipment.
-- **S4 — "Your network is a polite host":** Operator selects a lab-controlled SSID. Phase 1: deauth — audience sees the lab phone drop off Wi-Fi. Phase 2 (after deauth stops): rogue AP with the same SSID broadcasts; lab phone associates and is presented with a captive portal that captures the (test) credentials.
-
-S4 is staged in two phases so that no real client is forced onto a rogue AP without consent within a single uninterrupted attack — see §5.
+- **S4 — "Your network is a polite host":** Operator selects a lab-controlled SSID. The VariPortal (cloned AP + captive portal) starts on the target channel, then deauthentication begins — the audience watches the lab phone drop off the real AP and automatically associate with the cloned SSID, where it is presented with a credential-capture portal themed to match the lab environment. This is the full, uninterrupted VariPortal attack chain running in real time, demonstrating the actual threat as it would occur in the wild. See §9.6.1 for the single-radio technical approach and §5 for the authorization framework.
 
 ---
 
@@ -126,11 +124,16 @@ The team operates in awareness of **Law 175 of 2018 (Anti-Cyber and Information 
 - Captured Wi-Fi rogue-portal credentials in S4 are entered by the operator on a test handset, are themselves test strings, and are zeroized from the SD card after each demo session.
 - The device does not transmit any captured data off-board over the network.
 
-### 5.4 Demo safety constraints
+### 5.4 Operational posture
 
-- Wi-Fi deauth and rogue AP are **never** active simultaneously in the MVP. Deauth runs for a short, bounded window (default 15 seconds) targeting only a lab-owned BSSID and either one selected lab-owned client MAC or the explicitly selected **All discovered clients** set from the station scan, then halts. "All" is implemented as individual unicast frames to discovered stations only; broadcast deauth (`FF:FF:FF:FF:FF:FF`) remains prohibited. The rogue AP is started as a separate, deliberate action.
-- Sub-GHz transmission is rate-limited and bounded to power levels sufficient for the demo room only.
+All Wi-Fi, RF, NFC, and IR capabilities are **unrestricted within the three authorized environments** listed in §5.1. The device is a penetration-testing and awareness tool; artificial limitations that prevent the demonstration of real-world attack chains defeat the project's educational purpose. Operational rules reflect authorization scope, not firmware restrictions:
+
+- **Wi-Fi deauthentication** may target any station or set of stations on the authorized test network, including broadcast deauth (`FF:FF:FF:FF:FF:FF`), single-station unicast, or all-discovered-station sweeps. The operator selects the mode; the firmware does not refuse any lawful targeting option within the authorized environment.
+- **Deauthentication and the cloned AP (VariPortal) may run simultaneously** to demonstrate the full VariPortal attack chain in real time. See §9.6.1 for the single-radio technical approach and constraints.
+- **Portal theming** may reproduce the branding, layout, and login flow of any authorized target (including the CIC university portal and partner organization portals covered by the signed NDAs). Realistic impersonation is the point of the test — a generic page does not measure the target's actual exposure. Non-authorized brands are not used.
+- Sub-GHz transmission is bounded to power levels sufficient for the demo room.
 - IR transmission targets only equipment present in the demo room.
+- **Outside the three authorized environments, the device is not operated.** This is the safety boundary — not firmware-level locks on individual capabilities.
 
 ---
 
@@ -150,7 +153,7 @@ The team operates in awareness of **Law 175 of 2018 (Anti-Cyber and Information 
            │      │            │           │                   │
            │  ┌───┴────┐  ┌────┴────┐  ┌───┴───┐               │
            │  │ Deauth │  │ Input   │  │ NFC   │               │
-           │  │ EvilTw │  │ (4 btn) │  │ ctrl  │               │
+           │  │ VariPo │  │ (4 btn) │  │ ctrl  │               │
            │  │ Portal │  └────┬────┘  └───┬───┘               │
            │  └────┬───┘       │           │                   │
            │       │     ┌─────┴────┐   ┌──┴────┐  ┌────────┐  │
@@ -420,9 +423,9 @@ src/
 │   └── IrTx.{h,cpp}          # raw + protocol transmit
 └── wifi/
     ├── WifiScan.{h,cpp}      # AP + station scan in monitor mode
-    ├── Deauth.{h,cpp}        # crafted 802.11 deauth tx
-    ├── EvilTwin.{h,cpp}      # SoftAP with cloned SSID
-    └── Portal.{h,cpp}        # captive portal HTTP server + DNS
+    ├── Deauth.{h,cpp}        # crafted 802.11 deauth tx (all targeting modes)
+    ├── VariPortal.{h,cpp}    # SoftAP with cloned SSID + concurrent deauth coordination
+    └── Portal.{h,cpp}        # captive portal HTTP server + DNS + theme loader
 ```
 
 ### 8.3 Cooperative scheduling
@@ -431,7 +434,7 @@ The loop is a fixed-tick (1 ms) cooperative scheduler. Long-running operations (
 
 ### 8.4 Captive portal assets
 
-The portal HTML/CSS for S4 is served from firmware to avoid SPIFFS dependency. It mimics a generic ISP/router login flow (no real-world brand impersonation) and writes only masked demo submissions plus a hash to `/captures/portal.log` on the SD card. This file is wiped on demo end.
+Generic portal themes for S4 are embedded in firmware (PROGMEM strings) as defaults. **Target-specific themes** (authorized portal reproductions for CIC, partner bank, and partner company) are loaded from the SD card at `/portal-themes/<theme-name>/` — each folder contains `index.html`, `style.css`, and optionally image assets, plus a `theme.json` manifest with the theme display name and description. This SD-based approach means target themes can be updated without reflashing firmware, and sensitive branding assets are not compiled into the binary. Portal submissions are written to `/captures/portal.log` with timestamps. The log file is retained for post-demo review and audit.
 
 ---
 
@@ -511,9 +514,9 @@ We will **not** claim, on stage or in the report, that the device performs unaut
 
 **Current implementation status.** The v0.4 Wi-Fi implementation is not
 accepted as feature-complete. AP scan, station discovery, target binding,
-deauth, evil twin, and captive portal are being rebuilt as the active Wi-Fi
+deauth, cloned AP (VariPortal), and captive portal are being rebuilt as the active Wi-Fi
 revamp track. Existing code may be reused only where it still satisfies the
-safety constraints and passes hardware tests.
+PRD specifications and passes hardware tests.
 
 **Technical approach.** ESP32 Wi-Fi in promiscuous/monitor mode. AP scan via `WiFi.scanNetworks()` for the simple list; station scan via promiscuous-mode packet sniff filtering on data and probe frames to enumerate `(BSSID, station MAC, channel, RSSI)` tuples.
 
@@ -523,52 +526,94 @@ safety constraints and passes hardware tests.
 - AC1: Lists ≥10 APs in the lab within 5 seconds.
 - AC2: Allows the operator to mark a target AP and a target station for use by F5.
 
-### 9.5 F5 — Targeted deauthentication
+### 9.5 F5 — Deauthentication
 
-**Purpose.** Demonstrate the 802.11 deauth primitive against WPA2 networks.
+**Purpose.** Demonstrate the 802.11 deauth primitive against WPA2 networks and serve as the first stage of the full VariPortal attack chain (F5 → F6).
 
 **Current implementation status.** This feature is under active revamp. The
-demo target remains a lab-owned WPA2 AP with PMF disabled, but the firmware
-must reliably bind each burst to a station discovered from the F4 station
-scan before the feature can be marked done.
+firmware must support all three targeting modes (single station, all-discovered sweep, broadcast) and integrate cleanly with the VariPortal (F6) for simultaneous operation.
 
-**Technical approach.** Construct an 802.11 deauthentication management frame (reason code 7 — class 3 frame from non-associated STA) with the target station as receiver and the target AP as transmitter, then inject via `esp_wifi_80211_tx()` on the target AP's channel. Bursts are time-bounded (default 15 s, configurable up to 60 s) and target-bounded. The operator may choose a single station or **All discovered clients** after the station scan. The "All" option loops over discovered station MACs and sends individual unicast frames; the firmware refuses broadcast deauth (`FF:FF:FF:FF:FF:FF`) and refuses targets not selected from the F4 scan.
+**Technical approach.** Construct an 802.11 deauthentication management frame (reason code 7 — class 3 frame from non-associated STA) with the selected target as receiver and the target AP as transmitter, then inject via `esp_wifi_80211_tx()` on the target AP's channel. Bursts are time-bounded (default 15 s, configurable up to 60 s).
 
-**UX.** `Wi-Fi → Deauth → Pick AP → Scan Stations → Pick Station / All discovered → Run` shows a countdown bar, target count, and frame count.
+**Targeting modes** (operator-selectable from the F4 scan results):
+
+- **Single station** — one selected client MAC. Useful for surgical demos where only a specific lab device is deauthed while others stay connected.
+- **All discovered clients** — loops over station MACs found under the selected BSSID and sends individual unicast deauth frames to each. Useful when the demo needs to show all lab devices dropping off.
+- **Broadcast** — sends deauth with destination `FF:FF:FF:FF:FF:FF` on the target AP's BSSID. This is the standard pentest technique: a single frame deauths every client on the AP. More efficient than the per-station sweep, but affects all devices in range of that AP on that channel. Appropriate only in the controlled lab environment where no uninvolved devices are present.
+
+The operator selects the mode on the deauth config screen before starting the burst.
+
+**UX.** `Wi-Fi → Deauth → Pick AP → Scan Stations → Pick Station / All Discovered / Broadcast → Run` shows a countdown bar, target info, and frame count. Mascot is `ANGRY` during the burst.
 
 **Acceptance criteria.**
-- AC1: A lab-owned phone associated with the lab AP loses connectivity within 5 seconds of starting the burst.
-- AC2: Deauth halts at the configured timeout and the radio returns to scan-ready state.
-- AC3: Broadcast targets and unselected MACs are rejected with an on-screen error.
-- AC4: "All discovered clients" sends only to the station MACs found under the selected BSSID and never uses the broadcast destination address.
+- AC1: A lab-owned phone associated with the lab AP loses connectivity within 5 seconds of starting the burst in any targeting mode.
+- AC2: Deauth halts at the configured timeout and the radio returns to scan-ready state (or to VariPortal co-operation state if F6 is active).
+- AC3: Broadcast mode sends `FF:FF:FF:FF:FF:FF` deauth frames and disconnects all clients on the target AP.
+- AC4: All three targeting modes are selectable from the UI and function independently.
+- AC5: Deauth operates concurrently with the VariPortal (F6) when both are active — see §9.6.1 for the single-radio integration approach.
 
 **Reality check.** This is ineffective against WPA3-SAE and against WPA2 networks with PMF enabled (most modern enterprise APs and many recent home routers since ~2020). We test against an intentionally-WPA2 lab AP and we say so.
 
-### 9.6 F6 — Rogue AP with captive portal ("evil twin")
+### 9.6 F6 — VariPortal (cloned AP with credential-capture portal)
 
-**Purpose.** Demonstrate the second half of the evil-twin attack chain — the fake login surface a victim sees after being deauthed off their real network.
+**Purpose.** Demonstrate the complete VariPortal attack chain — cloned SSID + captive portal + credential capture — in a controlled environment, showing the authorized target audience how their users would experience a real attack against their infrastructure.
 
 **Current implementation status.** This feature is under active revamp. The
-portal must stay generic, log only demo/test submissions, mask credentials
-on screen, and start only after deauth has stopped.
+portal must support realistic theming (including authorized target branding), log all submissions, and operate concurrently with F5 deauth for the full attack chain demo.
 
-**Technical approach.** ESP32 in SoftAP mode broadcasts the cloned SSID (selected from F4 scan) as **open** (no PSK), on the same channel. A captive portal is presented via a DNS server that resolves all queries to the ESP32's IP, plus an HTTP server serving a generic router-style login page. Submitted demo values are masked before display/storage and written to `/captures/portal.log` with a hash for audit. The page intentionally does **not** impersonate any specific real-world brand.
+**Technical approach.** ESP32 in SoftAP mode broadcasts the cloned SSID (selected from F4 scan) as **open** (no PSK), pinned to the target AP's channel. A captive portal is presented via a DNS server that resolves all queries to the ESP32's IP, plus an HTTP server serving the portal page. Submitted credentials are displayed on the OLED (masked or unmasked at operator discretion) and written to `/captures/portal.log` with a timestamp for audit.
 
-**Portal rebrand test.** The operator can switch between a small set of generic
-demo themes (for example `Network Access`, `Campus Lab Access`, and
-`Router Console`) to test how framing affects audience understanding. Themes
-change text/color only; they must not use real bank, ISP, university, telco, or
-platform names, logos, or copied assets.
+**Portal theming.** The operator can load and switch between portal themes designed to match the authorized testing targets:
 
-**UX.** `Wi-Fi → Evil Twin → Pick SSID → Start`. `Wi-Fi → Portal Theme` cycles the generic rebrand test themes. A separate screen shows live association events and any portal submissions (with credentials masked on-screen as `user / ********`).
+- **Generic themes** (bundled defaults): `Network Access`, `Campus Lab Access`, `Router Console`. Used for general demos and university lectures.
+- **Target-specific themes** (loaded from SD card): accurate reproductions of the authorized target's real login page — including the CIC university portal, partner banking institution portal, and partner national company portal as covered under the signed NDAs. The point of target-specific theming is to measure whether users in the target organization would be fooled by a real attack; a generic page does not answer that question.
+- Theme assets (HTML, CSS, images) are stored on the SD card under `/portal-themes/<theme-name>/` and served from there. The firmware reads a `theme.json` manifest per theme folder.
+- **Non-authorized brands are not reproduced.** Only portals belonging to organizations where the team holds written testing authorization (§5.1) are cloned. This is an operational discipline, not a firmware lock.
+
+**UX.** `Wi-Fi → VariPortal → Pick SSID → Pick Theme → Start`. A live-status screen shows: cloned SSID name, channel, connected client count, association events, and portal submissions. If F5 (deauth) is running concurrently, the status screen shows both the deauth frame count and the VariPortal association count on a split display.
 
 **Acceptance criteria.**
-- AC1: A lab phone manually connecting to the cloned SSID is redirected to the captive portal within 10 seconds.
-- AC2: Credentials submitted on the portal are written to SD and visible (masked) on the OLED.
-- AC3: Stopping the evil twin returns Wi-Fi to scan-ready within 3 seconds.
-- AC4: Switching portal theme changes the captive portal presentation while keeping it generic and non-impersonating.
+- AC1: A lab phone connecting to the cloned SSID is redirected to the captive portal within 10 seconds.
+- AC2: Credentials submitted on the portal are written to SD and visible on the OLED.
+- AC3: Stopping the VariPortal returns Wi-Fi to scan-ready within 3 seconds.
+- AC4: Switching portal theme changes the captive portal presentation to match the selected authorized target.
+- AC5: The VariPortal operates concurrently with F5 deauth on the same channel — a deauthed lab phone auto-associates with the cloned SSID and reaches the portal without operator intervention.
+- AC6: Target-specific themes loaded from SD render correctly (logo, color scheme, form layout match the real portal).
 
-**Demo sequencing — important.** F5 (deauth) and F6 (evil twin) are not run simultaneously in the MVP. The ESP32-WROOM-32D N4 is a dual-core MCU, but it still has a single 2.4 GHz Wi-Fi radio, so the radio cannot reliably do both phases at once; more importantly, doing so unattended risks pushing a real bystander's device onto the rogue AP without their consent. The demo runs F5 *then stops F5*, *then* starts F6. The narrative makes the connection explicit: "this is the attack chain — but to stay safe and lawful we are showing you each stage separately."
+**Demo sequencing.** In the full S4 demo, the operator starts the VariPortal first (cloned SSID broadcasting), then starts F5 deauth against the real AP. The audience watches the lab phone disconnect from the real network and connect to the clone in real time, then sees credentials appear on the OLED. This is the actual attack chain as it occurs in the wild — the educational impact depends on showing it uninterrupted. See §9.6.1 for the technical approach that makes this work on a single-radio ESP32.
+
+### 9.6.1 Single-radio concurrent operation (deauth + VariPortal)
+
+The ESP32-WROOM-32D has a **single 2.4 GHz radio**, which creates a technical challenge for running SoftAP (VariPortal) and raw frame injection (deauth) simultaneously. This is solvable — ESP32 Marauder demonstrates this on the same hardware — but requires understanding the constraints.
+
+**How it works.** The ESP32 Wi-Fi stack allows SoftAP mode and raw frame injection (`esp_wifi_80211_tx()`) to coexist. The SoftAP runs on a fixed channel, and raw deauth frames can be injected on *any* channel by briefly switching the radio. The key constraint is:
+
+- **Same-channel operation is reliable.** If the target AP, the VariPortal SoftAP, and the deauth injection all operate on the **same Wi-Fi channel**, there is no channel-switching overhead. The SoftAP serves the portal while deauth frames are injected between beacon intervals. This is the preferred configuration.
+- **Cross-channel operation is degraded.** If the target AP is on a different channel from the SoftAP, the radio must hop between channels — injecting deauth frames on the target's channel, then returning to the SoftAP's channel to service portal clients. This causes latency spikes on the portal, dropped association attempts, and reduced deauth throughput. It works, but the demo is less clean.
+
+**Lab setup recommendation.** For the S4 demo, configure the lab-controlled AP on a **known, fixed channel** (e.g. channel 6) and start the VariPortal SoftAP on the same channel. This eliminates channel-hopping entirely and gives the smoothest demo experience. Document the channel in the demo kit checklist.
+
+**Implementation approach** (reference: ESP32 Marauder's `WiFiScan.cpp` attack loop):
+
+1. Start SoftAP on the target channel with the cloned SSID.
+2. Start the DNS + HTTP captive portal server on Core 0.
+3. On Core 1 (or interleaved on Core 0 between portal servicing), inject deauth frames via `esp_wifi_80211_tx()` in timed bursts.
+4. If cross-channel mode is required: implement a **time-division multiplexing** scheme — spend N ms on the target channel injecting deauth, then return to the SoftAP channel for M ms to service portal traffic. Typical values from Marauder: ~80% deauth duty, ~20% portal duty, with 100–200 ms switching intervals.
+5. Monitor SoftAP association events; when a victim device associates, briefly pause deauth to let the portal handshake complete, then resume.
+
+**Dual-core allocation** (ESP32-WROOM-32D has two cores):
+
+- **Core 0:** Wi-Fi stack, SoftAP, TCP/IP, DNS server, HTTP portal server, association event handler.
+- **Core 1:** Deauth frame injection loop, station scan refresh, OLED UI update, button input handler.
+
+This split keeps the portal responsive while deauth runs at full rate. FreeRTOS task pinning (`xTaskCreatePinnedToCore`) is used to enforce the split.
+
+**Known limitations to document in the demo:**
+
+- Portal response time may increase by 100–300 ms during active deauth bursts, even in same-channel mode.
+- If the lab AP is on a DFS channel (channels 52–144), the ESP32 cannot legally transmit there in most regions; pin the lab AP to channels 1–11.
+- Maximum simultaneous VariPortal clients is limited by ESP32 SoftAP capacity (~4–8 stations depending on firmware configuration).
+- The deauth-to-association race depends on the victim device's reconnection behavior; some devices take 2–10 seconds to probe for the cloned SSID after deauth.
 
 ### 9.7 F7 — SD card persistence
 
@@ -581,9 +626,18 @@ platform names, logos, or copied assets.
    /subghz/<UTC-timestamp>_<freq>kHz.json
    /nfc/<UTC-timestamp>_<uid>.json
    /ir/<UTC-timestamp>_<protocol>.json
-   /portal.log              (wiped end of session)
-/system.log              (rolling, capped at 1 MB)
-/config.json             (device config: brightness, default freq, deauth timeout, etc.)
+   /portal.log              (retained for post-demo audit)
+/portal-themes/
+   /generic-network/        (bundled default)
+   /generic-campus/         (bundled default)
+   /generic-router/         (bundled default)
+   /<target-name>/          (authorized target themes)
+       index.html
+       style.css
+       theme.json
+       /img/                (logos, backgrounds)
+/system.log
+/config.json
 ```
 
 Each capture file embeds a schema version and a SHA-1 of the payload for the decay study (R1: re-read SHA-1 vs. original at intervals).
@@ -629,8 +683,8 @@ The mascot is a first-class UX element retained from v0.4 and extended. Every sc
 | Probe / station found | `HAPPY` |
 | Deauth attack start | `ANGRY` |
 | Beacon spam running | `HAPPY` |
-| Evil twin AP up | `WORKING` |
-| Captive portal credential captured | `SUCCESS` |
+| VariPortal AP up | `WORKING` |
+| VariPortal credential captured | `SUCCESS` |
 | NFC scan running | `THINKING` |
 | NFC card read (UID only) | `HAPPY` |
 | NFC card read (EMV PAN) | `SUCCESS` |
@@ -788,23 +842,23 @@ Each feature in §9 has its acceptance criteria as the test script. Pass/fail re
 - **Engineer A — Hardware/RF lead:** wiring harness, PCB/perfboard, antennas, CC1101.
 - **Engineer B — Firmware core:** main loop, SPI bus mutex, SD, OLED, menu, input.
 - **Engineer C — NFC:** PN532 + EMV-lite parser.
-- **Engineer D — Wi-Fi:** scan + deauth + evil twin + portal.
+- **Engineer D — Wi-Fi:** scan + deauth + VariPortal 
 - **Engineer E — IR + Sub-GHz codec + integration testing + documentation.**
 
 ### 14.2 Schedule
 
-| Day | Hardware (A) | Core (B) | NFC (C) | Wi-Fi (D) | IR/SubGHz/Test (E) |
-|---|---|---|---|---|---|
-| 1 | Wire harness, voltage check, CC1101 antenna swap | PlatformIO project skeleton, OLED splash, button scan, serial logger | PN532 I²C bring-up, UID read | Wi-Fi AP scan working | IR RX bring-up, document protocols seen |
-| 2 | SD module wired and validated | SD mount, capture-store API, menu skeleton | EMV PPSE/AID parse against test card | Station scan in promiscuous mode | IR TX bring-up, NEC protocol round-trip |
-| 3 | Enclosure CAD v1 sent to print | Menu navigation full, settings page | PAN/expiry parse + masking + SD write | Deauth frame crafting + injection | Sub-GHz codec stub, CC1101 register init |
-| 4 | Enclosure fit check, antenna mount | Status LED patterns, error toast UI | NFC capture file format finalised | Deauth target-binding + safety guards | Sub-GHz capture (RAW) on bench transmitter |
-| 5 | — | Logger to SD, system.log rotation | NFC done; supports E for sub-GHz schema parity | SoftAP rogue cloned SSID | Sub-GHz replay vs. FIAT key bench test |
-| 6 | — | Performance pass (free RAM, loop latency) | Hardening + viva-prep notes | Captive portal HTML + DNS hijack | FIAT live test in lab parking |
-| 7 | Final enclosure assembly | Integration freeze for menu | — | Portal credential capture to SD | IR universal remote presets bundled |
-| 8 | — | All-feature dry run #1 | All-feature dry run #1 | All-feature dry run #1 | All-feature dry run #1, fix list |
-| 9 | — | Dry run #2 with external observer | " | " | " |
-| 10 | Demo logistics, cabling | Live demo support | Live demo support | Live demo support | Live demo + viva |
+| Day | Hardware (A)                                     | Core (B)                                                             | NFC (C)                                        | Wi-Fi (D)                             | IR/SubGHz/Test (E)                         |
+| --- | ------------------------------------------------ | -------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------- | ------------------------------------------ |
+| 1   | Wire harness, voltage check, CC1101 antenna swap | PlatformIO project skeleton, OLED splash, button scan, serial logger | PN532 I²C bring-up, UID read                   | Wi-Fi AP scan working                 | IR RX bring-up, document protocols seen    |
+| 2   | SD module wired and validated                    | SD mount, capture-store API, menu skeleton                           | EMV PPSE/AID parse against test card           | Station scan in promiscuous mode      | IR TX bring-up, NEC protocol round-trip    |
+| 3   | Enclosure CAD v1 sent to print                   | Menu navigation full, settings page                                  | PAN/expiry parse + masking + SD write          | Deauth frame crafting + injection     | Sub-GHz codec stub, CC1101 register init   |
+| 4   | Enclosure fit check, antenna mount               | Status LED patterns, error toast UI                                  | NFC capture file format finalised              | Deauth target-binding + safety guards | Sub-GHz capture (RAW) on bench transmitter |
+| 5   | —                                                | Logger to SD, system.log rotation                                    | NFC done; supports E for sub-GHz schema parity | VariPortal                            | Sub-GHz replay vs. FIAT key bench test     |
+| 6   | —                                                | Performance pass (free RAM, loop latency)                            | Hardening + viva-prep notes                    | Captive portal HTML + DNS hijack      | FIAT live test in lab parking              |
+| 7   | Final enclosure assembly                         | Integration freeze for menu                                          | —                                              | Portal credential capture to SD       | IR universal remote presets bundled        |
+| 8   | —                                                | All-feature dry run #1                                               | All-feature dry run #1                         | All-feature dry run #1                | All-feature dry run #1, fix list           |
+| 9   | —                                                | Dry run #2 with external observer                                    | "                                              | "                                     | "                                          |
+| 10  | Demo logistics, cabling                          | Live demo support                                                    | Live demo support                              | Live demo support                     | Live demo + viva                           |
 
 ### 14.3 Daily ritual
 
@@ -819,8 +873,8 @@ Each feature in §9 has its acceptance criteria as the test script. Pass/fail re
 | RK1 | CC1101 fails on shared SPI due to timing/CS hygiene | Medium | High | Strict mutex; CS HIGH at boot; per-driver SPI settings (`SPISettings`) re-applied each transaction |
 | RK2 | FIAT 128 lock harder to capture than expected (signal short, room noisy) | Low | High | Capture in quiet RF environment first (anechoic-ish room or remote in direct contact); fallback to a bench-transmitter demo |
 | RK3 | EMV parse fails on Egyptian card schemes (Meeza specifics) | Medium | Medium | Test against multiple test cards day 2–3; fall back to UID + ATQA display only for unsupported schemes |
-| RK4 | Deauth ineffective because lab AP has PMF on | Medium | Medium | Provision a dedicated lab AP with WPA2 + PMF disabled, named in the demo |
-| RK5 | Wi-Fi rogue AP cannot keep cloned SSID stable while channel-hopping | Low | Medium | Pin to target channel; do not channel-hop while SoftAP is up |
+| RK4 | Deauth ineffective because lab AP has PMF on | Medium | Medium | Provision the lab AP with WPA2 + PMF disabled on a **fixed known channel** (e.g. channel 6) before the demo. Document AP model, firmware version, and channel in the demo kit checklist. This channel also becomes the VariPortal SoftAP channel for same-channel concurrent operation (§9.6.1) |
+| RK5 | VariPortal + deauth concurrent operation degrades portal responsiveness or drops client associations under load | Medium | Medium | Pin lab AP and SoftAP to the same channel to eliminate channel-hop overhead (§9.6.1). Use dual-core task pinning (portal on Core 0, deauth on Core 1). Benchmark with 3 simultaneous portal clients during deauth burst; if portal latency >2 s, reduce deauth duty cycle. Fall back to sequential demo (deauth → stop → VariPortal) only if same-channel concurrent operation is unreliable after tuning |
 | RK6 | SD card corrupts mid-demo | Low | High | Keep a second pre-loaded SD card in the kit; capture-store writes atomic (write-then-rename) |
 | RK7 | One team member out for any of 10 days | Medium | Medium | Pair every owner with a backup; daily commits enforce continuity |
 | RK8 | Viva challenge: "does this perform unauthorized payments?" | High | High | §9.2 reality check is doctrine — every team member can answer this in one minute |
@@ -920,8 +974,8 @@ varione/
 │       ├── WifiScan.cpp
 │       ├── Deauth.h
 │       ├── Deauth.cpp
-│       ├── EvilTwin.h
-│       ├── EvilTwin.cpp
+│       ├── VariPortal.h
+│       ├── VariPortal.cpp
 │       ├── Portal.h
 │       └── Portal.cpp
 └── test/
@@ -970,7 +1024,9 @@ varione/
 #define VARIONE_VERSION    "0.1.0"
 
 // ---- Safety guards ----
-#define ALLOW_BROADCAST_DEAUTH    0   // hard-coded off
+#define ALLOW_BROADCAST_DEAUTH    1   // operator-selectable; lab environments are authorized
+#define VARIPORTAL_MAX_CLIENTS    8   // SoftAP concurrent client limit
+#define DEAUTH_PORTAL_COEXIST     1   // allow F5+F6 simultaneous operation
 ```
 
 ---
