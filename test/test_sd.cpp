@@ -106,7 +106,7 @@ void setup() {
 
 void loop() {
   static unsigned long lastProbe = 0;
-  if (millis() - lastProbe > 2000) {
+  if (millis() - lastProbe > 5000) {
     lastProbe = millis();
     runSdProbe();
   }

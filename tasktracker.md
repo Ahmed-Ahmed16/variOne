@@ -324,8 +324,8 @@ References: PRD §11 (capture schemas), §14.2 row Day 2.
 - [ ] Demo-mode toggle in settings (hides debug overlays during live demo)
 
 ### D — Wi-Fi
-- [x] Portal POST handler writes masked demo submissions to `/captures/portal.log`
-- [x] On-screen masked display: user/demo count only, password never shown raw
+- [ ] Portal POST handler writes credentials to `/captures/portal.log`
+- [ ] On-screen masked display: `user / ********` (never raw)
 - [ ] §9.6 AC2+AC3 verified
 - [ ] **Hard guard re-check:** deauth and evil twin cannot run simultaneously (UI state machine forbids it)
 
@@ -403,7 +403,7 @@ These are the must-pass gates from PRD §16. Tick when verified end-to-end.
 - [ ] **S2 Bank card read** — masked PAN + expiry on OLED within 2 s at ≥2 cm
 - [ ] **S3 IR replay** — TV/AC powers on at ≥3 m
 - [ ] **S4a Deauth** — lab phone drops Wi-Fi within 5 s, halts at timeout
-- [ ] **S4b Evil twin + portal** — phone redirected to portal within 10 s, demo submissions masked on-screen and written to SD
+- [ ] **S4b Evil twin + portal** — phone redirected to portal within 10 s, credentials masked on-screen and written to SD
 - [ ] **Persistence** — capture, hard reboot, replay still works
 - [ ] **Mascot coverage** — `docs/mascot-audit.md` shows zero screens without a mood call
 - [ ] **Standalone battery** — full S1–S4 cycle runs on battery only with cell ≥3.5 V at end (PRD §6.4)
